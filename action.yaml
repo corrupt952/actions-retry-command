@@ -1,0 +1,59 @@
+name: 'Retry command'
+description: 'Retries an Action step on failure.'
+
+inputs:
+  command:
+    required: true
+  working_directory:
+    required: true
+  max_attempts:
+    required: true
+    default: 5
+  retry_interval:
+    required: true
+    default: 5
+
+outputs:
+  exit_code:
+    description: 'Exit code of the last command executed'
+    value: ${{ inputs.execute_command.outputs.exit_code }}
+  result:
+    description: 'Output of the last command executed'
+    value: ${{ steps.execute_command.outputs.result }}
+
+runs:
+  using: 'composite'
+  steps:
+  - name: execute command
+    id: execute_command
+    shell: bash
+    working-directory: ${{ inputs.working_directory }}
+    run: |
+      declare -i max_attempts=${{ inputs.max_attempts }}
+
+      set +e
+      for ((i=1; i<=max_attempts; i++)); do
+        echo "Attempts: $i"
+        result=$(${{ inputs.command }} 2>&1)
+        exit_code=$?
+        echo "Exit code: $exit_code"
+        echo "Result: $result"
+
+        result="${result//'%'/'%25'}"
+        result="${result//$'\n'/'%0A'}"
+        result="${result//$'\r'/'%0D'}"
+        if ((exit_code == 0)); then
+          echo "::set-output name=result::$result name"
+          echo "::set-output name=exit_code::$exit_code"
+          break
+        elif ((i ==  max_attempts)); then
+          echo "::set-output name=result::$result"
+          echo "::set-output name=exit_code::$exit_code"
+          exit 1
+        else
+          retry_interval="${{ inputs.retry_interval }}"
+          echo "sleep: $retry_interval"
+          sleep $retry_interval
+        fi
+      done
+      set -e
