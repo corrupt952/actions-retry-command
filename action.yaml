@@ -49,7 +49,7 @@ runs:
         elif ((i ==  max_attempts)); then
           echo "::set-output name=result::$result"
           echo "::set-output name=exit_code::$exit_code"
-          exit 1
+          exit $exit_code
         else
           retry_interval="${{ inputs.retry_interval }}"
           echo "sleep: $retry_interval"
