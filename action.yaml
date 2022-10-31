@@ -45,13 +45,13 @@ runs:
         if ((exit_code == 0)); then
           echo "result<<EOS" >> $GITHUB_OUTPUT
           echo "$result" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "EOS" >> $GITHUB_OUTPUT
           echo "exit_code=$exist_code" >> $GITHUB_OUTPUT
           break
         elif ((i ==  max_attempts)); then
           echo "result<<EOS" >> $GITHUB_OUTPUT
           echo "$result" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "EOS" >> $GITHUB_OUTPUT
           echo "exit_code=$exist_code" >> $GITHUB_OUTPUT
           exit $exit_code
         else
