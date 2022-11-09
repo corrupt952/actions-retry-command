@@ -16,7 +16,7 @@ inputs:
 outputs:
   exit_code:
     description: 'Exit code of the last command executed'
-    value: ${{ inputs.execute_command.outputs.exit_code }}
+    value: ${{ steps.execute_command.outputs.exit_code }}
   result:
     description: 'Output of the last command executed'
     value: ${{ steps.execute_command.outputs.result }}
