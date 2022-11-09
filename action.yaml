@@ -28,36 +28,35 @@ runs:
     id: execute_command
     shell: bash
     working-directory: ${{ inputs.working_directory }}
+    continue-on-error: true
     run: |
       declare -i max_attempts=${{ inputs.max_attempts }}
 
       set +e
       for ((i=1; i<=max_attempts; i++)); do
-        echo "Attempts: $i"
+        echo -e "Attempts: $i"
         result=$(${{ inputs.command }} 2>&1)
         exit_code=$?
-        echo "Exit code: $exit_code"
-        echo "Result: $result"
+        echo -e "Exit code: $exit_code"
+        echo -e "Result: $result"
 
-        result="${result//'%'/'%25'}"
-        result="${result//$'\n'/'%0A'}"
-        result="${result//$'\r'/'%0D'}"
-        if ((exit_code == 0)); then
-          echo "result<<EOS" >> $GITHUB_OUTPUT
-          echo "$result" >> $GITHUB_OUTPUT
-          echo "EOS" >> $GITHUB_OUTPUT
-          echo "exit_code=$exist_code" >> $GITHUB_OUTPUT
-          break
-        elif ((i ==  max_attempts)); then
-          echo "result<<EOS" >> $GITHUB_OUTPUT
-          echo "$result" >> $GITHUB_OUTPUT
-          echo "EOS" >> $GITHUB_OUTPUT
-          echo "exit_code=$exist_code" >> $GITHUB_OUTPUT
+        if ((exit_code == 0)) || ((i ==  max_attempts)); then
+          echo -e "result<<EOS" >> $GITHUB_OUTPUT
+          echo -e "$result" >> $GITHUB_OUTPUT
+          echo -e "EOS" >> $GITHUB_OUTPUT
+
+          echo -e "exit_code=$exit_code" >> $GITHUB_OUTPUT
           exit $exit_code
         else
           retry_interval="${{ inputs.retry_interval }}"
-          echo "sleep: $retry_interval"
+          echo -e "sleep: $retry_interval"
           sleep $retry_interval
         fi
       done
       set -e
+
+  - name: debug
+    shell: bash
+    run: |
+      echo -e "Result: ${{ steps.execute_command.outputs.result }}"
+      echo -e "ExitCode: ${{ steps.execute_command.outputs.exit_code }}"
