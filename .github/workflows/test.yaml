@@ -1,0 +1,85 @@
+name: Test
+
+on:
+  push: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test_outputs_result:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
+        id: command
+        with:
+          command: echo "hello"
+          retry_interval: 1
+      - name: test
+        run: |
+          [ "${{ steps.command.outputs.result }}" == "hello" ] || exit 1
+
+  # start with index 1 ... $max_attempts
+  test_outputs_result_on_error:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
+        id: command
+        continue-on-error: true
+        with:
+          command: echo "count $i" && exit 1
+          retry_interval: 1
+          max_attempts: 3
+      - name: test
+        run: |
+          [ "${{ steps.command.outputs.result }}" == "count 3" ] || exit 1
+
+  test_outputs_exit_code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
+        id: command
+        with:
+          command: exit 0
+          retry_interval: 1
+      - name: test
+        run: |
+          [ "${{ steps.command.outputs.exit_code }}" == "0" ] || exit 1
+
+  test_outputs_exit_code_on_error:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
+        id: command
+        continue-on-error: true
+        with:
+          command: exit 255
+          retry_interval: 1
+      - name: test
+        run: |
+          [ "${{ steps.command.outputs.exit_code }}" == "255" ] || exit 1
+
+  test_output_multiline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
+        id: command
+        with:
+          command: echo -e "hello\nworld\ngithub"
+          retry_interval: 1
+      - name: test
+        run: |
+          [ '${{ steps.command.outputs.result }}' == "$(echo -e "hello\nworld\ngithub")" ]
+
+  test_retry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      # TODO:
+
