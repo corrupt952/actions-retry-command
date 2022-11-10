@@ -20,6 +20,18 @@ jobs:
       - name: test
         run: |
           [ "${{ steps.command.outputs.result }}" == "hello" ] || exit 1
+  test_outcome_is_success:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
+        id: command
+        with:
+          command: echo "hello"
+          retry_interval: 1
+      - name: test
+        run: |
+          [ "${{ steps.command.outcome }}" == "success" ] || exit 1
 
   # start with index 1 ... $max_attempts
   test_outputs_result_on_error:
@@ -36,6 +48,20 @@ jobs:
       - name: test
         run: |
           [ "${{ steps.command.outputs.result }}" == "count 3" ] || exit 1
+  test_outcome_is_failure_on_error:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
+        id: command
+        continue-on-error: true
+        with:
+          command: echo "count $i" && exit 1
+          retry_interval: 1
+          max_attempts: 3
+      - name: test
+        run: |
+          [ "${{ steps.command.outcome }}" == "failure" ] || exit 1
 
   test_outputs_exit_code:
     runs-on: ubuntu-latest
