@@ -20,6 +20,18 @@ jobs:
       - name: test
         run: |
           [ "${{ steps.command.outputs.result }}" == "hello" ] || exit 1
+  test_outcome_is_success:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
+        id: command
+        with:
+          command: echo "hello"
+          retry_interval: 1
+      - name: test
+        run: |
+          [ "${{ steps.command.outcome }}" == "success" ] || exit 1
 
   # start with index 1 ... $max_attempts
   test_outputs_result_on_error:
