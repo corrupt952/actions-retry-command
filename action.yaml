@@ -54,9 +54,3 @@ runs:
         fi
       done
       set -e
-
-  - name: debug
-    shell: bash
-    run: |
-      echo -e "Result: ${{ steps.execute_command.outputs.result }}"
-      echo -e "ExitCode: ${{ steps.execute_command.outputs.exit_code }}"
