@@ -11,7 +11,7 @@ jobs:
   test_outputs_result:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./
         id: command
         with:
@@ -23,7 +23,7 @@ jobs:
   test_outcome_is_success:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./
         id: command
         with:
@@ -37,7 +37,7 @@ jobs:
   test_outputs_result_on_error:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./
         id: command
         continue-on-error: true
@@ -51,7 +51,7 @@ jobs:
   test_outcome_is_failure_on_error:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./
         id: command
         continue-on-error: true
@@ -66,7 +66,7 @@ jobs:
   test_outputs_exit_code:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./
         id: command
         with:
@@ -79,7 +79,7 @@ jobs:
   test_outputs_exit_code_on_error:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./
         id: command
         continue-on-error: true
@@ -93,7 +93,7 @@ jobs:
   test_output_multiline:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./
         id: command
         with:
@@ -106,6 +106,6 @@ jobs:
   test_retry:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       # TODO:
 
