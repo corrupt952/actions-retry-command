@@ -3,6 +3,8 @@
 Retries an Action step on failure.  
 This action is unique compared to other actions in that it is possible to obtain the results of retries.
 
+[Marketplace](https://github.com/marketplace/actions/retry-command)
+
 ## Inputs
 
 ### `command`
