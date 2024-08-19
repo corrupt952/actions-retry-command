@@ -35,7 +35,7 @@ Output of the last command executed
 ### Simple
 
 ```yaml
-- uses: corrupt952/retry-command@v1
+- uses: corrupt952/actions-retry-command@v1
   with:
     command: terraform plan -no-color
     max_attempts: 3
@@ -45,7 +45,7 @@ Output of the last command executed
 ### Retry interval to a random time
 
 ```yaml
-- uses: corrupt952/retry-command@v1
+- uses: corrupt952/actions-retry-command@v1
   with:
     command: terraform plan -no-color
     retry_interval: $((RANDOM % 31))
@@ -54,7 +54,7 @@ Output of the last command executed
 ### Set working directory
 
 ```yaml
-- uses: corrupt952/retry-command@v1
+- uses: corrupt952/actions-retry-command@v1
   with:
     command: terraform plan -no-color
     working-directory: path/to
@@ -63,7 +63,7 @@ Output of the last command executed
 ### Using output of the last command executed
 
 ```yaml
-- uses: corrupt952/retry-command@v1
+- uses: corrupt952/actions-retry-command@v1
   id: terraform_plan
   continue-on-error: true
   with:
