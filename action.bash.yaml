@@ -1,0 +1,55 @@
+name: 'Retry command'
+description: 'Retries an Action step on failure.'
+
+inputs:
+  command:
+    required: true
+  working_directory:
+    required: true
+  max_attempts:
+    required: true
+    default: 5
+  retry_interval:
+    required: true
+    default: 5
+
+outputs:
+  exit_code:
+    description: 'Exit code of the last command executed'
+    value: ${{ steps.execute_command.outputs.exit_code }}
+  result:
+    description: 'Output of the last command executed'
+    value: ${{ steps.execute_command.outputs.result }}
+
+runs:
+  using: 'composite'
+  steps:
+  - name: execute command
+    id: execute_command
+    shell: bash
+    working-directory: ${{ inputs.working_directory }}
+    run: |
+      declare -i max_attempts=${{ inputs.max_attempts }}
+
+      set +e
+      for ((i=1; i<=max_attempts; i++)); do
+        echo -e "Attempts: $i"
+        result=$(${{ inputs.command }} 2>&1)
+        exit_code=$?
+        echo -e "Exit code: $exit_code"
+        echo -e "Result: $result"
+
+        if ((exit_code == 0)) || ((i ==  max_attempts)); then
+          echo -e "result<<EOS" >> $GITHUB_OUTPUT
+          echo -e "$result" >> $GITHUB_OUTPUT
+          echo -e "EOS" >> $GITHUB_OUTPUT
+
+          echo -e "exit_code=$exit_code" >> $GITHUB_OUTPUT
+          exit $exit_code
+        else
+          retry_interval="${{ inputs.retry_interval }}"
+          echo -e "sleep: $retry_interval"
+          sleep $retry_interval
+        fi
+      done
+      set -e
