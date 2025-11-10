@@ -7,7 +7,7 @@ package-lock.json
 yarn.lock
 
 # Build outputs
-# Note: dist/ is committed for GitHub Actions
+dist/
 lib/
 *.tsbuildinfo
 
