@@ -45,7 +45,7 @@ export function evaluateExpression(input: string, vars: Vars = {}): number {
   }
   function parsePower(): number {
     const base = parseUnary()
-    if (match('^')) return Math.pow(base, parsePower())
+    if (match('^')) return base ** parsePower()
     return base
   }
   function parseUnary(): number {

@@ -19,7 +19,7 @@ export function parseRetryOnExitCode(input: string): number[] | null {
   return input
     .split(',')
     .map((s) => parseInt(s.trim(), 10))
-    .filter((n) => !isNaN(n))
+    .filter((n) => !Number.isNaN(n))
 }
 
 export function sleep(ms: number): Promise<void> {
@@ -54,7 +54,7 @@ export async function executeCommand(
     const timeoutMs = timeout * 1000
     let timedOut = false
 
-    let timerId: ReturnType<typeof setTimeout>
+    let timerId: ReturnType<typeof setTimeout> | undefined
     const timeoutPromise = new Promise<number>((resolve) => {
       timerId = setTimeout(() => {
         timedOut = true
@@ -74,7 +74,7 @@ export async function executeCommand(
       .catch(() => 1)
 
     exitCode = await Promise.race([execPromise, timeoutPromise])
-    clearTimeout(timerId!)
+    clearTimeout(timerId)
 
     if (timedOut) {
       return { exitCode: 124, output: (stdout + stderr).trimEnd() }

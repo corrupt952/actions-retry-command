@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals'
+import type { jest } from '@jest/globals'
 
 export function createSimulateExec(execMock: jest.Mock) {
   return function simulateExec(
