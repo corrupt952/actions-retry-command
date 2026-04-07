@@ -1,0 +1,220 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test-typescript:
+    name: TypeScript Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        id: setup-node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install Dependencies
+        id: npm-ci
+        run: npm ci
+
+      - name: Verify Package Signatures
+        id: npm-audit-signatures
+        run: npm audit signatures
+
+      - name: Check Format
+        id: npm-format-check
+        run: npm run format:check
+
+      - name: Lint
+        id: npm-lint
+        run: npm run lint
+
+      - name: Test
+        id: npm-ci-test
+        run: npm run ci-test
+
+  test-action:
+    name: GitHub Actions Test
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v6
+
+      - name: Test basic command
+        id: test-basic
+        uses: ./
+        with:
+          command: echo "hello"
+
+      - name: Verify basic output
+        run: |
+          [ "${{ steps.test-basic.outputs.result }}" = "hello" ] || exit 1
+          [ "${{ steps.test-basic.outputs.exit_code }}" = "0" ] || exit 1
+
+      - name: Test failure with retry
+        id: test-failure
+        continue-on-error: true
+        uses: ./
+        with:
+          command: exit 1
+          max_attempts: 2
+          retry_interval: 0
+
+      - name: Verify failure output
+        run: |
+          [ "${{ steps.test-failure.outputs.exit_code }}" = "1" ] || exit 1
+          [ "${{ steps.test-failure.outcome }}" = "failure" ] || exit 1
+
+      - name: Test multiline output
+        id: test-multiline
+        uses: ./
+        with:
+          command: printf 'hello\nworld\ngithub'
+
+      - name: Verify multiline output
+        run: |
+          expected=$(printf 'hello\nworld\ngithub')
+          [ '${{ steps.test-multiline.outputs.result }}' = "$expected" ] || exit 1
+
+      - name: Test specific exit code
+        id: test-exit-code
+        continue-on-error: true
+        uses: ./
+        with:
+          command: exit 255
+          max_attempts: 1
+
+      - name: Verify exit code preserved
+        run: |
+          [ "${{ steps.test-exit-code.outputs.exit_code }}" = "255" ] || exit 1
+
+      - name: Test retry then succeed
+        id: test-retry-succeed
+        uses: ./
+        with:
+          command: |
+            if [ -f /tmp/retry_marker_test ]; then echo "success"; exit 0; fi
+            touch /tmp/retry_marker_test; echo "fail"; exit 1
+          max_attempts: 3
+          retry_interval: 0
+
+      - name: Verify retry succeeded
+        run: |
+          [ "${{ steps.test-retry-succeed.outputs.exit_code }}" = "0" ] || exit 1
+
+      - name: Test shell selection
+        id: test-shell
+        uses: ./
+        with:
+          command: echo "from sh"
+          shell: sh
+
+      - name: Verify shell selection
+        run: |
+          [ "${{ steps.test-shell.outputs.result }}" = "from sh" ] || exit 1
+
+      - name: Test timeout
+        id: test-timeout
+        continue-on-error: true
+        uses: ./
+        with:
+          command: sleep 60
+          timeout: 1
+          max_attempts: 1
+
+      - name: Verify timeout
+        run: |
+          [ "${{ steps.test-timeout.outputs.exit_code }}" = "124" ] || exit 1
+          [ "${{ steps.test-timeout.outcome }}" = "failure" ] || exit 1
+
+      - name: Test retry_on_exit_code
+        id: test-retry-on-code
+        continue-on-error: true
+        uses: ./
+        with:
+          command: exit 42
+          retry_on_exit_code: '1,2'
+          max_attempts: 3
+          retry_interval: 0
+
+      - name: Verify retry_on_exit_code
+        run: |
+          [ "${{ steps.test-retry-on-code.outputs.exit_code }}" = "42" ] || exit 1
+
+      - name: Test working directory
+        id: test-working-dir
+        uses: ./
+        with:
+          command: pwd -P
+          working_directory: /tmp
+
+      - name: Verify working directory
+        run: |
+          expected=$(cd /tmp && pwd -P)
+          [ "${{ steps.test-working-dir.outputs.result }}" = "$expected" ] || exit 1
+
+  check-dist:
+    name: Check dist/
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        id: setup-node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install Dependencies
+        id: install
+        run: npm ci
+
+      - name: Build dist/ Directory
+        id: build
+        run: npm run package
+
+      - name: Compare Directories
+        id: diff
+        run: |
+          if [ ! -d dist/ ]; then
+            echo "Expected dist/ directory does not exist."
+            ls -la ./
+            exit 1
+          fi
+          if [ "$(git diff --ignore-space-at-eol --text dist/ | wc -l)" -gt "0" ]; then
+            echo "Detected uncommitted changes after build. See status below:"
+            git diff --ignore-space-at-eol --text dist/
+            exit 1
+          fi
+
+      - if: ${{ failure() && steps.diff.outcome == 'failure' }}
+        name: Upload Artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
