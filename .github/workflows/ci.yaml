@@ -133,6 +133,34 @@ jobs:
         run: |
           [ "${{ steps.test-shell.outputs.result }}" = "from sh" ] || exit 1
 
+      - name: Test timeout
+        id: test-timeout
+        continue-on-error: true
+        uses: ./
+        with:
+          command: sleep 60
+          timeout: 1
+          max_attempts: 1
+
+      - name: Verify timeout
+        run: |
+          [ "${{ steps.test-timeout.outputs.exit_code }}" = "124" ] || exit 1
+          [ "${{ steps.test-timeout.outcome }}" = "failure" ] || exit 1
+
+      - name: Test retry_on_exit_code
+        id: test-retry-on-code
+        continue-on-error: true
+        uses: ./
+        with:
+          command: exit 42
+          retry_on_exit_code: '1,2'
+          max_attempts: 3
+          retry_interval: 0
+
+      - name: Verify retry_on_exit_code
+        run: |
+          [ "${{ steps.test-retry-on-code.outputs.exit_code }}" = "42" ] || exit 1
+
   check-dist:
     name: Check dist/
     runs-on: ubuntu-latest
