@@ -1,10 +1,8 @@
 # actions-retry-command
 
-Retries a shell command on failure with **real-time output streaming**.
+Retries a shell command on failure with **output capture**.
 
-Unlike other retry actions that swallow command output during execution, this
-action streams stdout and stderr to the Actions log in real time while still
-capturing the output for use in subsequent steps.
+Unlike other retry actions that only stream output to the log, this action captures stdout and stderr as action outputs so you can reference them in subsequent steps.
 
 [Marketplace](https://github.com/marketplace/actions/retry-command)
 
@@ -29,6 +27,28 @@ capturing the output for use in subsequent steps.
 
 ## Examples
 
+### Post failure output as a PR comment
+
+```yaml
+- uses: corrupt952/actions-retry-command@v2
+  id: terraform_plan
+  continue-on-error: true
+  with:
+    command: terraform plan -no-color
+    max_attempts: 3
+    retry_interval: 10
+- if: steps.terraform_plan.outcome == 'failure'
+  uses: actions/github-script@v7
+  with:
+    script: |
+      github.rest.issues.createComment({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: context.issue.number,
+        body: `### Terraform Plan Failed (exit code: ${{ steps.terraform_plan.outputs.exit_code }})\n\`\`\`\n${{ steps.terraform_plan.outputs.result }}\n\`\`\``
+      })
+```
+
 ### Basic
 
 ```yaml
@@ -50,9 +70,7 @@ capturing the output for use in subsequent steps.
     retry_interval: 10
 ```
 
-> **Note:** The timeout feature uses `Promise.race` internally. If a command
-> exceeds the timeout, the action returns exit code 124 but the underlying
-> process may continue running until the GitHub Actions runner terminates it.
+> **Note:** The timeout feature uses `Promise.race` internally. If a command exceeds the timeout, the action returns exit code 124 but the underlying process may continue running until the GitHub Actions runner terminates it.
 
 ### Retry only on specific exit codes
 
@@ -86,22 +104,18 @@ capturing the output for use in subsequent steps.
 
 ```yaml
 - uses: corrupt952/actions-retry-command@v2
-  id: terraform_plan
+  id: health_check
   continue-on-error: true
   with:
-    command: terraform plan -no-color
+    command: curl -s https://example.com/health
     max_attempts: 3
-- if: steps.terraform_plan.outcome == 'failure'
-  run: |
-    echo "Exit code: ${{ steps.terraform_plan.outputs.exit_code }}"
-    echo "Result: ${{ steps.terraform_plan.outputs.result }}"
+- if: steps.health_check.outputs.exit_code == '0'
+  run: echo "Response: ${{ steps.health_check.outputs.result }}"
 ```
 
 ## retry_interval Expressions
 
-The `retry_interval` input accepts arithmetic expressions with access to
-`attempt` (current attempt number) and `max_attempts`. Built-in functions:
-`random(n)`, `min(a, b)`, `max(a, b)`, `floor(n)`, `ceil(n)`.
+The `retry_interval` input accepts arithmetic expressions with access to `attempt` (current attempt number) and `max_attempts`. Built-in functions: `random(n)`, `min(a, b)`, `max(a, b)`, `floor(n)`, `ceil(n)`.
 
 | Strategy            | Expression             | Attempt 1 | Attempt 2 | Attempt 3 |
 | ------------------- | ---------------------- | --------- | --------- | --------- |
@@ -125,4 +139,4 @@ The `retry_interval` input accepts arithmetic expressions with access to
 - All inputs except `command` are now optional with sensible defaults.
 - New inputs: `timeout`, `shell`, `retry_on_exit_code`.
 - `retry_interval` no longer supports bash expressions (e.g., `$((RANDOM % 10))`). Use the built-in expression syntax instead (e.g., `5 + random(10)`).
-- Output is now streamed in real time during execution.
+- Command output is now captured as action outputs (`exit_code`, `result`).
