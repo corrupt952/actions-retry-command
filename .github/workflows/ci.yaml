@@ -161,6 +161,17 @@ jobs:
         run: |
           [ "${{ steps.test-retry-on-code.outputs.exit_code }}" = "42" ] || exit 1
 
+      - name: Test working directory
+        id: test-working-dir
+        uses: ./
+        with:
+          command: pwd
+          working_directory: /tmp
+
+      - name: Verify working directory
+        run: |
+          [ "${{ steps.test-working-dir.outputs.result }}" = "/tmp" ] || exit 1
+
   check-dist:
     name: Check dist/
     runs-on: ubuntu-latest

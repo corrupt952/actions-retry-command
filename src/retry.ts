@@ -29,13 +29,15 @@ export function sleep(ms: number): Promise<void> {
 export async function executeCommand(
   command: string,
   shell: string,
-  timeout: number | null
+  timeout: number | null,
+  workingDirectory: string
 ): Promise<RetryResult> {
   let stdout = ''
   let stderr = ''
 
   const options: exec.ExecOptions = {
     ignoreReturnCode: true,
+    ...(workingDirectory && { cwd: workingDirectory }),
     listeners: {
       stdout: (data: Buffer) => {
         stdout += data.toString()

@@ -105,7 +105,7 @@ describe('executeCommand', () => {
   it('Executes command with the specified shell', async () => {
     simulateExec(0, 'hello\n')
 
-    const result = await executeCommand('echo hello', 'bash', null)
+    const result = await executeCommand('echo hello', 'bash', null, '')
 
     expect(execFixture.exec).toHaveBeenCalledWith(
       'bash',
@@ -119,7 +119,7 @@ describe('executeCommand', () => {
   it('Executes command with sh shell', async () => {
     simulateExec(0, 'test\n')
 
-    await executeCommand('echo test', 'sh', null)
+    await executeCommand('echo test', 'sh', null, '')
 
     expect(execFixture.exec).toHaveBeenCalledWith(
       'sh',
@@ -131,7 +131,7 @@ describe('executeCommand', () => {
   it('Returns non-zero exit code', async () => {
     simulateExec(42)
 
-    const result = await executeCommand('exit 42', 'bash', null)
+    const result = await executeCommand('exit 42', 'bash', null, '')
 
     expect(result.exitCode).toBe(42)
   })
@@ -139,7 +139,7 @@ describe('executeCommand', () => {
   it('Captures stdout', async () => {
     simulateExec(0, 'output line\n')
 
-    const result = await executeCommand('echo output', 'bash', null)
+    const result = await executeCommand('echo output', 'bash', null, '')
 
     expect(result.output).toBe('output line')
   })
@@ -147,7 +147,7 @@ describe('executeCommand', () => {
   it('Captures stderr', async () => {
     simulateExec(0, '', 'error line\n')
 
-    const result = await executeCommand('cmd', 'bash', null)
+    const result = await executeCommand('cmd', 'bash', null, '')
 
     expect(result.output).toBe('error line')
   })
@@ -155,7 +155,7 @@ describe('executeCommand', () => {
   it('Combines stdout and stderr', async () => {
     simulateExec(0, 'out\n', 'err\n')
 
-    const result = await executeCommand('cmd', 'bash', null)
+    const result = await executeCommand('cmd', 'bash', null, '')
 
     expect(result.output).toBe('out\nerr')
   })
@@ -163,7 +163,7 @@ describe('executeCommand', () => {
   it('Trims trailing whitespace from output', async () => {
     simulateExec(0, 'hello\n\n\n')
 
-    const result = await executeCommand('cmd', 'bash', null)
+    const result = await executeCommand('cmd', 'bash', null, '')
 
     expect(result.output).toBe('hello')
   })
@@ -171,7 +171,7 @@ describe('executeCommand', () => {
   it('Returns empty output when command produces none', async () => {
     simulateExec(0)
 
-    const result = await executeCommand('true', 'bash', null)
+    const result = await executeCommand('true', 'bash', null, '')
 
     expect(result.output).toBe('')
   })
@@ -180,7 +180,7 @@ describe('executeCommand', () => {
     jest.useFakeTimers()
     simulateExec(0, 'fast\n')
 
-    const promise = executeCommand('echo fast', 'bash', 5)
+    const promise = executeCommand('echo fast', 'bash', 5, '')
     await jest.advanceTimersByTimeAsync(0)
     const result = await promise
 
@@ -198,7 +198,7 @@ describe('executeCommand', () => {
       return 0
     })
 
-    const promise = executeCommand('sleep 60', 'bash', 1)
+    const promise = executeCommand('sleep 60', 'bash', 1, '')
     await jest.advanceTimersByTimeAsync(1000)
     const result = await promise
 
@@ -228,7 +228,7 @@ describe('executeCommand', () => {
       }
     )
 
-    const promise = executeCommand('cmd', 'bash', 1)
+    const promise = executeCommand('cmd', 'bash', 1, '')
     await jest.advanceTimersByTimeAsync(1000)
     const result = await promise
 
@@ -241,7 +241,7 @@ describe('executeCommand', () => {
   it('Handles exec rejection without timeout', async () => {
     execFixture.exec.mockRejectedValueOnce(new Error('exec failed'))
 
-    await expect(executeCommand('bad-cmd', 'bash', null)).rejects.toThrow(
+    await expect(executeCommand('bad-cmd', 'bash', null, '')).rejects.toThrow(
       'exec failed'
     )
   })
@@ -251,7 +251,7 @@ describe('executeCommand', () => {
 
     execFixture.exec.mockRejectedValueOnce(new Error('exec failed'))
 
-    const promise = executeCommand('bad-cmd', 'bash', 5)
+    const promise = executeCommand('bad-cmd', 'bash', 5, '')
     await jest.advanceTimersByTimeAsync(0)
     const result = await promise
 
@@ -263,7 +263,7 @@ describe('executeCommand', () => {
   it('Handles multiline command output', async () => {
     simulateExec(0, 'line1\nline2\nline3\n')
 
-    const result = await executeCommand('cmd', 'bash', null)
+    const result = await executeCommand('cmd', 'bash', null, '')
 
     expect(result.output).toBe('line1\nline2\nline3')
   })
@@ -271,7 +271,7 @@ describe('executeCommand', () => {
   it('Handles output with special characters', async () => {
     simulateExec(0, '{"key": "value"}\n')
 
-    const result = await executeCommand('cmd', 'bash', null)
+    const result = await executeCommand('cmd', 'bash', null, '')
 
     expect(result.output).toBe('{"key": "value"}')
   })
@@ -296,8 +296,32 @@ describe('executeCommand', () => {
       }
     )
 
-    const result = await executeCommand('cmd', 'bash', null)
+    const result = await executeCommand('cmd', 'bash', null, '')
 
     expect(result.output).toBe('chunk1chunk2chunk3')
+  })
+
+  it('Sets cwd in exec options when workingDirectory is provided', async () => {
+    simulateExec(0, 'output\n')
+
+    await executeCommand('pwd', 'bash', null, '/tmp')
+
+    expect(execFixture.exec).toHaveBeenCalledWith(
+      'bash',
+      ['-c', 'pwd'],
+      expect.objectContaining({ cwd: '/tmp' })
+    )
+  })
+
+  it('Does not set cwd in exec options when workingDirectory is empty', async () => {
+    simulateExec(0, 'output\n')
+
+    await executeCommand('pwd', 'bash', null, '')
+
+    expect(execFixture.exec).toHaveBeenCalledWith(
+      'bash',
+      ['-c', 'pwd'],
+      expect.not.objectContaining({ cwd: expect.anything() })
+    )
   })
 })

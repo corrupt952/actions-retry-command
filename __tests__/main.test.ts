@@ -18,7 +18,8 @@ function setupInputs(overrides: Record<string, string> = {}): void {
     retry_interval: '0',
     timeout: '',
     shell: 'bash',
-    retry_on_exit_code: ''
+    retry_on_exit_code: '',
+    working_directory: ''
   }
   const inputs = { ...defaults, ...overrides }
   core.getInput.mockImplementation((name: string) => inputs[name] ?? '')
@@ -484,6 +485,35 @@ describe('main.ts', () => {
       await run()
 
       expect(core.setFailed).toHaveBeenCalledWith('string error')
+    })
+  })
+
+  describe('working_directory', () => {
+    it('Passes working_directory to executeCommand', async () => {
+      setupInputs({ command: 'pwd', working_directory: '/tmp' })
+      simulateExec(0, '/tmp\n')
+
+      await run()
+
+      expect(execFixture.exec).toHaveBeenCalledWith(
+        'bash',
+        ['-c', 'pwd'],
+        expect.objectContaining({ cwd: '/tmp' })
+      )
+      expect(core.setOutput).toHaveBeenCalledWith('result', '/tmp')
+    })
+
+    it('Uses empty working_directory by default', async () => {
+      setupInputs({ command: 'pwd' })
+      simulateExec(0, '/home\n')
+
+      await run()
+
+      expect(execFixture.exec).toHaveBeenCalledWith(
+        'bash',
+        ['-c', 'pwd'],
+        expect.not.objectContaining({ cwd: expect.anything() })
+      )
     })
   })
 })

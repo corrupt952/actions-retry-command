@@ -13,6 +13,7 @@ capturing the output for use in subsequent steps.
 | Name                 | Required | Default | Description                                   |
 | -------------------- | -------- | ------- | --------------------------------------------- |
 | `command`            | Yes      |         | The command to execute                        |
+| `working_directory`  | No       |         | Working directory for command execution       |
 | `max_attempts`       | No       | `5`     | Maximum number of retry attempts              |
 | `retry_interval`     | No       | `5`     | Seconds to wait between retries               |
 | `timeout`            | No       |         | Per-attempt timeout in seconds                |
@@ -72,6 +73,15 @@ capturing the output for use in subsequent steps.
     shell: sh
 ```
 
+### Working directory
+
+```yaml
+- uses: corrupt952/actions-retry-command@v2
+  with:
+    command: ls -la
+    working_directory: ./build
+```
+
 ### Using outputs
 
 ```yaml
@@ -89,8 +99,8 @@ capturing the output for use in subsequent steps.
 
 ## Migration from v1
 
-- `working_directory` input has been removed. Use `cd` in your command instead.
 - Commands now run via `shell -c` in a subprocess. Internal variables like `$i` from v1's retry loop are no longer accessible.
 - All inputs except `command` are now optional with sensible defaults.
 - New inputs: `timeout`, `shell`, `retry_on_exit_code`.
+- `retry_interval` no longer supports bash expressions (e.g., `$((RANDOM % 10))`). Use a fixed integer value instead.
 - Output is now streamed in real time during execution.

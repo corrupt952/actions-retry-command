@@ -31,6 +31,7 @@ export async function run(): Promise<void> {
       return
     }
     const shell = core.getInput('shell') || 'bash'
+    const workingDirectory = core.getInput('working_directory') || ''
     const retryOnExitCode = parseRetryOnExitCode(
       core.getInput('retry_on_exit_code')
     )
@@ -41,7 +42,12 @@ export async function run(): Promise<void> {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       core.startGroup(`Attempt ${attempt} of ${maxAttempts}`)
 
-      const result = await executeCommand(command, shell, timeout)
+      const result = await executeCommand(
+        command,
+        shell,
+        timeout,
+        workingDirectory
+      )
       lastExitCode = result.exitCode
       lastOutput = result.output
 
