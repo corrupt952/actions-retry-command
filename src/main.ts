@@ -19,11 +19,11 @@ export async function run(): Promise<void> {
     const retryInterval = core.getInput('retry_interval') || '5'
     const timeoutInput = core.getInput('timeout')
     const timeout = timeoutInput ? parseInt(timeoutInput, 10) : null
-    if (timeout !== null && (isNaN(timeout) || timeout < 0)) {
+    if (timeout !== null && (Number.isNaN(timeout) || timeout < 0)) {
       core.setFailed('timeout must be a non-negative integer')
       return
     }
-    if (isNaN(maxAttempts) || maxAttempts < 1) {
+    if (Number.isNaN(maxAttempts) || maxAttempts < 1) {
       core.setFailed('max_attempts must be a positive integer')
       return
     }
