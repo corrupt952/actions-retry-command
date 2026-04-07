@@ -165,12 +165,13 @@ jobs:
         id: test-working-dir
         uses: ./
         with:
-          command: pwd
+          command: pwd -P
           working_directory: /tmp
 
       - name: Verify working directory
         run: |
-          [ "${{ steps.test-working-dir.outputs.result }}" = "/tmp" ] || exit 1
+          expected=$(cd /tmp && pwd -P)
+          [ "${{ steps.test-working-dir.outputs.result }}" = "$expected" ] || exit 1
 
   check-dist:
     name: Check dist/
