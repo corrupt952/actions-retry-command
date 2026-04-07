@@ -10,15 +10,15 @@ capturing the output for use in subsequent steps.
 
 ## Inputs
 
-| Name                 | Required | Default | Description                                   |
-| -------------------- | -------- | ------- | --------------------------------------------- |
-| `command`            | Yes      |         | The command to execute                        |
-| `working_directory`  | No       |         | Working directory for command execution       |
-| `max_attempts`       | No       | `5`     | Maximum number of retry attempts              |
-| `retry_interval`     | No       | `5`     | Seconds to wait between retries               |
-| `timeout`            | No       |         | Per-attempt timeout in seconds                |
-| `shell`              | No       | `bash`  | Shell to use (`bash`, `sh`)                   |
-| `retry_on_exit_code` | No       |         | Comma-separated exit codes that trigger retry |
+| Name                 | Required | Default | Description                                            |
+| -------------------- | -------- | ------- | ------------------------------------------------------ |
+| `command`            | Yes      |         | The command to execute                                 |
+| `working_directory`  | No       |         | Working directory for command execution                |
+| `max_attempts`       | No       | `5`     | Maximum number of retry attempts                       |
+| `retry_interval`     | No       | `5`     | Seconds to wait between retries (supports expressions) |
+| `timeout`            | No       |         | Per-attempt timeout in seconds                         |
+| `shell`              | No       | `bash`  | Shell to use (`bash`, `sh`)                            |
+| `retry_on_exit_code` | No       |         | Comma-separated exit codes that trigger retry          |
 
 ## Outputs
 
@@ -97,10 +97,32 @@ capturing the output for use in subsequent steps.
     echo "Result: ${{ steps.terraform_plan.outputs.result }}"
 ```
 
+## retry_interval Expressions
+
+The `retry_interval` input accepts arithmetic expressions with access to
+`attempt` (current attempt number) and `max_attempts`. Built-in functions:
+`random(n)`, `min(a, b)`, `max(a, b)`, `floor(n)`, `ceil(n)`.
+
+| Strategy            | Expression             | Attempt 1 | Attempt 2 | Attempt 3 |
+| ------------------- | ---------------------- | --------- | --------- | --------- |
+| Constant            | `5`                    | 5         | 5         | 5         |
+| Linear backoff      | `attempt * 5`          | 5         | 10        | 15        |
+| Exponential backoff | `2 ^ attempt`          | 2         | 4         | 8         |
+| Jitter              | `5 + random(10)`       | 5-14      | 5-14      | 5-14      |
+| Capped exponential  | `min(2 ^ attempt, 60)` | 2         | 4         | 8         |
+
+```yaml
+- uses: corrupt952/actions-retry-command@v2
+  with:
+    command: curl https://example.com/health
+    max_attempts: 5
+    retry_interval: 'min(2 ^ attempt, 60)'
+```
+
 ## Migration from v1
 
 - Commands now run via `shell -c` in a subprocess. Internal variables like `$i` from v1's retry loop are no longer accessible.
 - All inputs except `command` are now optional with sensible defaults.
 - New inputs: `timeout`, `shell`, `retry_on_exit_code`.
-- `retry_interval` no longer supports bash expressions (e.g., `$((RANDOM % 10))`). Use a fixed integer value instead.
+- `retry_interval` no longer supports bash expressions (e.g., `$((RANDOM % 10))`). Use the built-in expression syntax instead (e.g., `5 + random(10)`).
 - Output is now streamed in real time during execution.

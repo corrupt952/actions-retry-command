@@ -19,7 +19,7 @@ inputs:
     required: false
     default: '5'
   retry_interval:
-    description: 'Seconds to wait between retries'
+    description: 'Seconds to wait between retries. Supports expressions (e.g., attempt * 2, 5 + random(10))'
     required: false
     default: '5'
   timeout:

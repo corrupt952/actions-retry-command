@@ -378,6 +378,41 @@ describe('main.ts', () => {
 
       expect(core.info).toHaveBeenCalledWith('Retrying in 10 seconds...')
     })
+
+    it('Fails when retry_interval evaluates to negative', async () => {
+      setupInputs({
+        command: 'fail',
+        max_attempts: '2',
+        retry_interval: '-5'
+      })
+      simulateExec(1, 'fail\n')
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        'retry_interval evaluated to a negative number'
+      )
+    })
+
+    it('Supports expression-based retry_interval', async () => {
+      jest.useFakeTimers()
+
+      setupInputs({
+        command: 'fail',
+        max_attempts: '3',
+        retry_interval: 'attempt * 2'
+      })
+      simulateExec(1, 'fail\n')
+      simulateExec(0, 'ok\n')
+
+      const promise = run()
+      await jest.advanceTimersByTimeAsync(2000)
+      await promise
+
+      jest.useRealTimers()
+
+      expect(core.info).toHaveBeenCalledWith('Retrying in 2 seconds...')
+    })
   })
 
   describe('input validation', () => {
@@ -410,28 +445,6 @@ describe('main.ts', () => {
 
       expect(core.setFailed).toHaveBeenCalledWith(
         'max_attempts must be a positive integer'
-      )
-      expect(execFixture.exec).not.toHaveBeenCalled()
-    })
-
-    it('Fails when retry_interval is not a number', async () => {
-      setupInputs({ command: 'cmd', retry_interval: 'abc' })
-
-      await run()
-
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'retry_interval must be a non-negative integer'
-      )
-      expect(execFixture.exec).not.toHaveBeenCalled()
-    })
-
-    it('Fails when retry_interval is negative', async () => {
-      setupInputs({ command: 'cmd', retry_interval: '-1' })
-
-      await run()
-
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'retry_interval must be a non-negative integer'
       )
       expect(execFixture.exec).not.toHaveBeenCalled()
     })

@@ -28120,6 +28120,114 @@ function endGroup() {
     issue('endgroup');
 }
 
+const FUNCTIONS = {
+    random: (n) => Math.floor(Math.random() * n),
+    min: (a, b) => Math.min(a, b),
+    max: (a, b) => Math.max(a, b),
+    floor: (n) => Math.floor(n),
+    ceil: (n) => Math.ceil(n)
+};
+function evaluateExpression(input, vars = {}) {
+    let pos = 0;
+    function peek() {
+        while (pos < input.length && /\s/.test(input[pos]))
+            pos++;
+        return input[pos] || '';
+    }
+    function advance() {
+        return input[pos++];
+    }
+    function match(ch) {
+        if (peek() === ch) {
+            pos++;
+            return true;
+        }
+        return false;
+    }
+    function parseExpr() {
+        let left = parseTerm();
+        while (true) {
+            if (match('+'))
+                left = left + parseTerm();
+            else if (match('-'))
+                left = left - parseTerm();
+            else
+                break;
+        }
+        return left;
+    }
+    function parseTerm() {
+        let left = parsePower();
+        while (true) {
+            if (match('*'))
+                left = left * parsePower();
+            else if (match('/'))
+                left = left / parsePower();
+            else if (match('%'))
+                left = left % parsePower();
+            else
+                break;
+        }
+        return left;
+    }
+    function parsePower() {
+        const base = parseUnary();
+        if (match('^'))
+            return Math.pow(base, parsePower());
+        return base;
+    }
+    function parseUnary() {
+        if (match('-'))
+            return -parsePrimary();
+        if (match('+'))
+            return +parsePrimary();
+        return parsePrimary();
+    }
+    function parsePrimary() {
+        if (/[0-9.]/.test(peek())) {
+            let num = '';
+            while (pos < input.length && /[0-9.]/.test(input[pos]))
+                num += advance();
+            return parseFloat(num);
+        }
+        if (/[a-zA-Z_]/.test(peek())) {
+            let name = '';
+            while (pos < input.length && /[a-zA-Z0-9_]/.test(input[pos]))
+                name += advance();
+            if (peek() === '(') {
+                advance();
+                const args = [];
+                if (peek() !== ')') {
+                    args.push(parseExpr());
+                    while (match(','))
+                        args.push(parseExpr());
+                }
+                if (!match(')'))
+                    throw new Error("Expected ')'");
+                const fn = FUNCTIONS[name];
+                if (!fn)
+                    throw new Error(`Unknown function: ${name}`);
+                return fn(...args);
+            }
+            if (!Object.hasOwn(vars, name))
+                throw new Error(`Undefined variable: ${name}`);
+            return vars[name];
+        }
+        if (match('(')) {
+            const val = parseExpr();
+            if (!match(')'))
+                throw new Error("Expected ')'");
+            return val;
+        }
+        throw new Error(`Unexpected '${peek()}' at position ${pos}`);
+    }
+    const result = parseExpr();
+    if (pos < input.length && /\S/.test(input.slice(pos))) {
+        throw new Error(`Unexpected '${input[pos]}' at position ${pos}`);
+    }
+    return result;
+}
+
 var exec = {};
 
 var toolrunner = {};
@@ -29437,7 +29545,7 @@ async function run() {
     try {
         const command = getInput('command', { required: true });
         const maxAttempts = parseInt(getInput('max_attempts') || '5', 10);
-        const retryInterval = parseInt(getInput('retry_interval') || '5', 10);
+        const retryInterval = getInput('retry_interval') || '5';
         const timeoutInput = getInput('timeout');
         const timeout = timeoutInput ? parseInt(timeoutInput, 10) : null;
         if (timeout !== null && (isNaN(timeout) || timeout < 0)) {
@@ -29446,10 +29554,6 @@ async function run() {
         }
         if (isNaN(maxAttempts) || maxAttempts < 1) {
             setFailed('max_attempts must be a positive integer');
-            return;
-        }
-        if (isNaN(retryInterval) || retryInterval < 0) {
-            setFailed('retry_interval must be a non-negative integer');
             return;
         }
         const shell = getInput('shell') || 'bash';
@@ -29473,8 +29577,16 @@ async function run() {
                 info(`Exit code ${result.exitCode} is not in retry list, stopping retries`);
                 break;
             }
-            info(`Retrying in ${retryInterval} seconds...`);
-            await sleep(retryInterval * 1000);
+            const sleepSeconds = evaluateExpression(retryInterval, {
+                attempt,
+                max_attempts: maxAttempts
+            });
+            if (sleepSeconds < 0) {
+                setFailed('retry_interval evaluated to a negative number');
+                return;
+            }
+            info(`Retrying in ${sleepSeconds} seconds...`);
+            await sleep(sleepSeconds * 1000);
         }
         setOutput('exit_code', lastExitCode.toString());
         setOutput('result', lastOutput);

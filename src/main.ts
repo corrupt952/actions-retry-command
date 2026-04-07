@@ -1,4 +1,5 @@
 import * as core from '@actions/core'
+import { evaluateExpression } from './expression.js'
 import {
   executeCommand,
   parseRetryOnExitCode,
@@ -15,7 +16,7 @@ export async function run(): Promise<void> {
   try {
     const command = core.getInput('command', { required: true })
     const maxAttempts = parseInt(core.getInput('max_attempts') || '5', 10)
-    const retryInterval = parseInt(core.getInput('retry_interval') || '5', 10)
+    const retryInterval = core.getInput('retry_interval') || '5'
     const timeoutInput = core.getInput('timeout')
     const timeout = timeoutInput ? parseInt(timeoutInput, 10) : null
     if (timeout !== null && (isNaN(timeout) || timeout < 0)) {
@@ -24,10 +25,6 @@ export async function run(): Promise<void> {
     }
     if (isNaN(maxAttempts) || maxAttempts < 1) {
       core.setFailed('max_attempts must be a positive integer')
-      return
-    }
-    if (isNaN(retryInterval) || retryInterval < 0) {
-      core.setFailed('retry_interval must be a non-negative integer')
       return
     }
     const shell = core.getInput('shell') || 'bash'
@@ -68,8 +65,16 @@ export async function run(): Promise<void> {
         break
       }
 
-      core.info(`Retrying in ${retryInterval} seconds...`)
-      await sleep(retryInterval * 1000)
+      const sleepSeconds = evaluateExpression(retryInterval, {
+        attempt,
+        max_attempts: maxAttempts
+      })
+      if (sleepSeconds < 0) {
+        core.setFailed('retry_interval evaluated to a negative number')
+        return
+      }
+      core.info(`Retrying in ${sleepSeconds} seconds...`)
+      await sleep(sleepSeconds * 1000)
     }
 
     core.setOutput('exit_code', lastExitCode.toString())
