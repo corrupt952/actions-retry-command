@@ -29381,11 +29381,12 @@ function parseRetryOnExitCode(input) {
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
-async function executeCommand(command, shell, timeout) {
+async function executeCommand(command, shell, timeout, workingDirectory) {
     let stdout = '';
     let stderr = '';
     const options = {
         ignoreReturnCode: true,
+        ...(workingDirectory && { cwd: workingDirectory }),
         listeners: {
             stdout: (data) => {
                 stdout += data.toString();
@@ -29452,12 +29453,13 @@ async function run() {
             return;
         }
         const shell = getInput('shell') || 'bash';
+        const workingDirectory = getInput('working_directory') || '';
         const retryOnExitCode = parseRetryOnExitCode(getInput('retry_on_exit_code'));
         let lastExitCode = 0;
         let lastOutput = '';
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             startGroup(`Attempt ${attempt} of ${maxAttempts}`);
-            const result = await executeCommand(command, shell, timeout);
+            const result = await executeCommand(command, shell, timeout, workingDirectory);
             lastExitCode = result.exitCode;
             lastOutput = result.output;
             endGroup();
