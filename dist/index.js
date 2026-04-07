@@ -28173,7 +28173,7 @@ function evaluateExpression(input, vars = {}) {
     function parsePower() {
         const base = parseUnary();
         if (match('^'))
-            return Math.pow(base, parsePower());
+            return base ** parsePower();
         return base;
     }
     function parseUnary() {
@@ -29484,7 +29484,7 @@ function parseRetryOnExitCode(input) {
     return input
         .split(',')
         .map((s) => parseInt(s.trim(), 10))
-        .filter((n) => !isNaN(n));
+        .filter((n) => !Number.isNaN(n));
 }
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -29548,11 +29548,11 @@ async function run() {
         const retryInterval = getInput('retry_interval') || '5';
         const timeoutInput = getInput('timeout');
         const timeout = timeoutInput ? parseInt(timeoutInput, 10) : null;
-        if (timeout !== null && (isNaN(timeout) || timeout < 0)) {
+        if (timeout !== null && (Number.isNaN(timeout) || timeout < 0)) {
             setFailed('timeout must be a non-negative integer');
             return;
         }
-        if (isNaN(maxAttempts) || maxAttempts < 1) {
+        if (Number.isNaN(maxAttempts) || maxAttempts < 1) {
             setFailed('max_attempts must be a positive integer');
             return;
         }
