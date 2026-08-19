@@ -77,9 +77,12 @@ jobs:
           command: echo "hello"
 
       - name: Verify basic output
+        env:
+          RESULT: ${{ steps.test-basic.outputs.result }}
+          EXIT_CODE: ${{ steps.test-basic.outputs.exit_code }}
         run: |
-          [ "${{ steps.test-basic.outputs.result }}" = "hello" ] || exit 1
-          [ "${{ steps.test-basic.outputs.exit_code }}" = "0" ] || exit 1
+          [ "$RESULT" = "hello" ] || exit 1
+          [ "$EXIT_CODE" = "0" ] || exit 1
 
       - name: Test failure with retry
         id: test-failure
@@ -91,9 +94,12 @@ jobs:
           retry_interval: 0
 
       - name: Verify failure output
+        env:
+          EXIT_CODE: ${{ steps.test-failure.outputs.exit_code }}
+          OUTCOME: ${{ steps.test-failure.outcome }}
         run: |
-          [ "${{ steps.test-failure.outputs.exit_code }}" = "1" ] || exit 1
-          [ "${{ steps.test-failure.outcome }}" = "failure" ] || exit 1
+          [ "$EXIT_CODE" = "1" ] || exit 1
+          [ "$OUTCOME" = "failure" ] || exit 1
 
       - name: Test multiline output
         id: test-multiline
@@ -102,9 +108,11 @@ jobs:
           command: printf 'hello\nworld\ngithub'
 
       - name: Verify multiline output
+        env:
+          RESULT: ${{ steps.test-multiline.outputs.result }}
         run: |
           expected=$(printf 'hello\nworld\ngithub')
-          [ '${{ steps.test-multiline.outputs.result }}' = "$expected" ] || exit 1
+          [ "$RESULT" = "$expected" ] || exit 1
 
       - name: Test specific exit code
         id: test-exit-code
@@ -115,8 +123,10 @@ jobs:
           max_attempts: 1
 
       - name: Verify exit code preserved
+        env:
+          EXIT_CODE: ${{ steps.test-exit-code.outputs.exit_code }}
         run: |
-          [ "${{ steps.test-exit-code.outputs.exit_code }}" = "255" ] || exit 1
+          [ "$EXIT_CODE" = "255" ] || exit 1
 
       - name: Test retry then succeed
         id: test-retry-succeed
@@ -129,8 +139,10 @@ jobs:
           retry_interval: 0
 
       - name: Verify retry succeeded
+        env:
+          EXIT_CODE: ${{ steps.test-retry-succeed.outputs.exit_code }}
         run: |
-          [ "${{ steps.test-retry-succeed.outputs.exit_code }}" = "0" ] || exit 1
+          [ "$EXIT_CODE" = "0" ] || exit 1
 
       - name: Test shell selection
         id: test-shell
@@ -140,8 +152,10 @@ jobs:
           shell: sh
 
       - name: Verify shell selection
+        env:
+          RESULT: ${{ steps.test-shell.outputs.result }}
         run: |
-          [ "${{ steps.test-shell.outputs.result }}" = "from sh" ] || exit 1
+          [ "$RESULT" = "from sh" ] || exit 1
 
       - name: Test timeout
         id: test-timeout
@@ -153,9 +167,12 @@ jobs:
           max_attempts: 1
 
       - name: Verify timeout
+        env:
+          EXIT_CODE: ${{ steps.test-timeout.outputs.exit_code }}
+          OUTCOME: ${{ steps.test-timeout.outcome }}
         run: |
-          [ "${{ steps.test-timeout.outputs.exit_code }}" = "124" ] || exit 1
-          [ "${{ steps.test-timeout.outcome }}" = "failure" ] || exit 1
+          [ "$EXIT_CODE" = "124" ] || exit 1
+          [ "$OUTCOME" = "failure" ] || exit 1
 
       - name: Test retry_on_exit_code
         id: test-retry-on-code
@@ -168,8 +185,10 @@ jobs:
           retry_interval: 0
 
       - name: Verify retry_on_exit_code
+        env:
+          EXIT_CODE: ${{ steps.test-retry-on-code.outputs.exit_code }}
         run: |
-          [ "${{ steps.test-retry-on-code.outputs.exit_code }}" = "42" ] || exit 1
+          [ "$EXIT_CODE" = "42" ] || exit 1
 
       - name: Test working directory
         id: test-working-dir
@@ -179,9 +198,11 @@ jobs:
           working_directory: /tmp
 
       - name: Verify working directory
+        env:
+          RESULT: ${{ steps.test-working-dir.outputs.result }}
         run: |
           expected=$(cd /tmp && pwd -P)
-          [ "${{ steps.test-working-dir.outputs.result }}" = "$expected" ] || exit 1
+          [ "$RESULT" = "$expected" ] || exit 1
 
   check-dist:
     name: Check dist/
