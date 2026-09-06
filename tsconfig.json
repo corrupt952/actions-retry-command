@@ -22,6 +22,6 @@
     "strictNullChecks": true,
     "target": "ES2022"
   },
-  "exclude": ["__fixtures__", "__tests__", "coverage", "node_modules"],
-  "include": ["src"]
+  "exclude": ["coverage", "node_modules"],
+  "include": ["src", "__tests__"]
 }

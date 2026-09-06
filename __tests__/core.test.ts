@@ -1,10 +1,10 @@
 /**
  * Unit tests for src/core.ts
  */
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { EOL, tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { jest } from '@jest/globals'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { EOL } from 'node:os'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
   endGroup,
   getInput,
@@ -13,25 +13,9 @@ import {
   setOutput,
   startGroup
 } from '../src/core.ts'
+import { captureOutput, outputFile } from './helpers.ts'
 
 const originalEnv = process.env
-
-function captureStdout(): { written: () => string } {
-  const chunks: string[] = []
-  jest
-    .spyOn(process.stdout, 'write')
-    .mockImplementation((chunk: string | Uint8Array) => {
-      chunks.push(chunk.toString())
-      return true
-    })
-  return { written: () => chunks.join('') }
-}
-
-function outputFile(): string {
-  const path = join(mkdtempSync(join(tmpdir(), 'core-test-')), 'output')
-  writeFileSync(path, '')
-  return path
-}
 
 beforeEach(() => {
   process.env = { ...originalEnv }
@@ -39,56 +23,56 @@ beforeEach(() => {
 
 afterEach(() => {
   process.env = originalEnv
-  jest.restoreAllMocks()
+  process.exitCode = 0
 })
 
 describe('getInput', () => {
   it('Reads the INPUT_ environment variable for the name', () => {
     process.env.INPUT_COMMAND = 'echo hello'
 
-    expect(getInput('command')).toBe('echo hello')
+    assert.equal(getInput('command'), 'echo hello')
   })
 
   it('Uppercases the name and replaces spaces with underscores', () => {
     process.env.INPUT_MAX_ATTEMPTS = '3'
     process.env.INPUT_TWO_WORDS = 'value'
 
-    expect(getInput('max_attempts')).toBe('3')
-    expect(getInput('two words')).toBe('value')
+    assert.equal(getInput('max_attempts'), '3')
+    assert.equal(getInput('two words'), 'value')
   })
 
   it('Trims surrounding whitespace', () => {
     process.env.INPUT_SHELL = '  sh  '
 
-    expect(getInput('shell')).toBe('sh')
+    assert.equal(getInput('shell'), 'sh')
   })
 
   it('Returns an empty string when the variable is unset', () => {
     delete process.env.INPUT_TIMEOUT
 
-    expect(getInput('timeout')).toBe('')
+    assert.equal(getInput('timeout'), '')
   })
 
   it('Preserves newlines inside the value', () => {
     process.env.INPUT_COMMAND = 'echo one\necho two'
 
-    expect(getInput('command')).toBe('echo one\necho two')
+    assert.equal(getInput('command'), 'echo one\necho two')
   })
 
   it('Throws when a required input is unset', () => {
     delete process.env.INPUT_COMMAND
 
-    expect(() => getInput('command', { required: true })).toThrow(
-      'Input required and not supplied: command'
-    )
+    assert.throws(() => getInput('command', { required: true }), {
+      message: 'Input required and not supplied: command'
+    })
   })
 
   it('Throws when a required input is empty', () => {
     process.env.INPUT_COMMAND = ''
 
-    expect(() => getInput('command', { required: true })).toThrow(
-      'Input required and not supplied: command'
-    )
+    assert.throws(() => getInput('command', { required: true }), {
+      message: 'Input required and not supplied: command'
+    })
   })
 })
 
@@ -99,9 +83,10 @@ describe('setOutput', () => {
 
     setOutput('exit_code', '0')
 
-    const written = readFileSync(path, 'utf8')
-    expect(written).toMatch(/^exit_code<<ghadelimiter_/)
-    expect(written.split(EOL)[1]).toBe('0')
+    const lines = readFileSync(path, 'utf8').split(EOL)
+    assert.match(lines[0], /^exit_code<<ghadelimiter_/)
+    assert.equal(lines[1], '0')
+    assert.equal(lines[2], lines[0].split('<<')[1])
   })
 
   it('Round-trips a multiline value', () => {
@@ -112,7 +97,7 @@ describe('setOutput', () => {
 
     const lines = readFileSync(path, 'utf8').split(EOL)
     const delimiter = lines[0].split('<<')[1]
-    expect(lines.slice(1, lines.indexOf(delimiter, 1))).toEqual([
+    assert.deepEqual(lines.slice(1, lines.indexOf(delimiter, 1)), [
       'line1',
       'line2',
       'line3'
@@ -127,7 +112,7 @@ describe('setOutput', () => {
     setOutput('b', '2')
 
     const lines = readFileSync(path, 'utf8').split(EOL)
-    expect(lines[0].split('<<')[1]).not.toBe(lines[3].split('<<')[1])
+    assert.notEqual(lines[0].split('<<')[1], lines[3].split('<<')[1])
   })
 
   it('Appends without truncating earlier outputs', () => {
@@ -138,71 +123,63 @@ describe('setOutput', () => {
     setOutput('result', 'hello')
 
     const written = readFileSync(path, 'utf8')
-    expect(written).toContain('exit_code<<')
-    expect(written).toContain('result<<')
+    assert.ok(written.includes('exit_code<<'))
+    assert.ok(written.includes('result<<'))
   })
 
   it('Throws when GITHUB_OUTPUT is not set', () => {
     delete process.env.GITHUB_OUTPUT
 
-    expect(() => setOutput('exit_code', '0')).toThrow(
-      'Unable to find environment variable for file command OUTPUT'
-    )
+    assert.throws(() => setOutput('exit_code', '0'), {
+      message: 'Unable to find environment variable for file command OUTPUT'
+    })
   })
 })
 
 describe('info', () => {
-  it('Writes the message followed by a line ending', () => {
-    const stdout = captureStdout()
+  it('Writes the message followed by a line ending', async () => {
+    const written = await captureOutput(async () => {
+      info('hello')
+    })
 
-    info('hello')
-
-    expect(stdout.written()).toBe(`hello${EOL}`)
+    assert.equal(written, `hello${EOL}`)
   })
 })
 
 describe('startGroup and endGroup', () => {
-  it('Issues the group workflow commands', () => {
-    const stdout = captureStdout()
+  it('Issues the group workflow commands', async () => {
+    const written = await captureOutput(async () => {
+      startGroup('Attempt 1 of 3')
+      endGroup()
+    })
 
-    startGroup('Attempt 1 of 3')
-    endGroup()
-
-    expect(stdout.written()).toBe(
-      `::group::Attempt 1 of 3${EOL}::endgroup::${EOL}`
-    )
+    assert.equal(written, `::group::Attempt 1 of 3${EOL}::endgroup::${EOL}`)
   })
 
-  it('Escapes characters that would break the command', () => {
-    const stdout = captureStdout()
+  it('Escapes characters that would break the command', async () => {
+    const written = await captureOutput(async () => {
+      startGroup('100% done\nnext')
+    })
 
-    startGroup('100% done\nnext')
-
-    expect(stdout.written()).toBe(`::group::100%25 done%0Anext${EOL}`)
+    assert.equal(written, `::group::100%25 done%0Anext${EOL}`)
   })
 })
 
 describe('setFailed', () => {
-  afterEach(() => {
-    process.exitCode = 0
+  it('Issues an error command and marks the process as failed', async () => {
+    const written = await captureOutput(async () => {
+      setFailed('Command failed with exit code 1')
+    })
+
+    assert.equal(written, `::error::Command failed with exit code 1${EOL}`)
+    assert.equal(process.exitCode, 1)
   })
 
-  it('Issues an error command and marks the process as failed', () => {
-    const stdout = captureStdout()
+  it('Escapes newlines and percent signs in the message', async () => {
+    const written = await captureOutput(async () => {
+      setFailed('bad\r\nmessage 50%')
+    })
 
-    setFailed('Command failed with exit code 1')
-
-    expect(stdout.written()).toBe(
-      `::error::Command failed with exit code 1${EOL}`
-    )
-    expect(process.exitCode).toBe(1)
-  })
-
-  it('Escapes newlines and percent signs in the message', () => {
-    const stdout = captureStdout()
-
-    setFailed('bad\r\nmessage 50%')
-
-    expect(stdout.written()).toBe(`::error::bad%0D%0Amessage 50%25${EOL}`)
+    assert.equal(written, `::error::bad%0D%0Amessage 50%25${EOL}`)
   })
 })

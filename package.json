@@ -21,24 +21,19 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "ci-test": "NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 jest",
+    "ci-test": "node --test --test-reporter=spec --test-reporter-destination=stderr --experimental-test-coverage --test-coverage-exclude='__tests__/**' __tests__/*.test.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
     "check": "biome check .",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 jest",
+    "test": "node --test --test-reporter=spec --test-reporter-destination=stderr __tests__/*.test.ts",
     "all": "npm run check && npm run typecheck && npm run test"
   },
   "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "2.5.11",
-    "@jest/globals": "30.5.0",
-    "@types/jest": "30.0.0",
     "@types/node": "25.9.5",
-    "jest": "30.5.0",
-    "ts-jest": "29.4.12",
-    "ts-jest-resolver": "2.0.1",
     "typescript": "5.9.3"
   }
 }
