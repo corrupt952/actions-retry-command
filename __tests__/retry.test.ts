@@ -1,14 +1,19 @@
 /**
  * Unit tests for src/retry.ts
+ *
+ * executeCommand runs real child processes rather than a mocked exec layer,
+ * so the timeout behaviour under test is the behaviour that ships.
  */
+import { existsSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { jest } from '@jest/globals'
-import * as execFixture from '../__fixtures__/exec.js'
-import { createSimulateExec } from '../__fixtures__/helpers.js'
-
-jest.unstable_mockModule('@actions/exec', () => execFixture)
-
-const { shouldRetry, parseRetryOnExitCode, sleep, executeCommand } =
-  await import('../src/retry.js')
+import {
+  executeCommand,
+  parseRetryOnExitCode,
+  shouldRetry,
+  sleep
+} from '../src/retry.js'
 
 describe('shouldRetry', () => {
   it('Returns false for exit code 0', () => {
@@ -96,232 +101,162 @@ describe('sleep', () => {
 })
 
 describe('executeCommand', () => {
-  afterEach(() => {
-    jest.resetAllMocks()
+  beforeEach(() => {
+    // The command's own output is streamed to the runner log; keep it out of
+    // the test report.
+    jest.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
   })
 
-  const simulateExec = createSimulateExec(execFixture.exec)
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
 
-  it('Executes command with the specified shell', async () => {
-    simulateExec(0, 'hello\n')
-
+  it('Runs the command through the given shell', async () => {
     const result = await executeCommand('echo hello', 'bash', null, '')
 
-    expect(execFixture.exec).toHaveBeenCalledWith(
-      'bash',
-      ['-c', 'echo hello'],
-      expect.objectContaining({ ignoreReturnCode: true })
-    )
     expect(result.exitCode).toBe(0)
     expect(result.output).toBe('hello')
   })
 
-  it('Executes command with sh shell', async () => {
-    simulateExec(0, 'test\n')
+  it('Runs the command through sh', async () => {
+    const result = await executeCommand('echo test', 'sh', null, '')
 
-    await executeCommand('echo test', 'sh', null, '')
-
-    expect(execFixture.exec).toHaveBeenCalledWith(
-      'sh',
-      ['-c', 'echo test'],
-      expect.any(Object)
-    )
+    expect(result.exitCode).toBe(0)
+    expect(result.output).toBe('test')
   })
 
-  it('Returns non-zero exit code', async () => {
-    simulateExec(42)
-
+  it('Returns a non-zero exit code', async () => {
     const result = await executeCommand('exit 42', 'bash', null, '')
 
     expect(result.exitCode).toBe(42)
   })
 
-  it('Captures stdout', async () => {
-    simulateExec(0, 'output line\n')
+  it('Preserves exit code 255', async () => {
+    const result = await executeCommand('exit 255', 'bash', null, '')
 
-    const result = await executeCommand('echo output', 'bash', null, '')
-
-    expect(result.output).toBe('output line')
+    expect(result.exitCode).toBe(255)
   })
 
   it('Captures stderr', async () => {
-    simulateExec(0, '', 'error line\n')
+    const result = await executeCommand('echo oops >&2', 'bash', null, '')
 
-    const result = await executeCommand('cmd', 'bash', null, '')
-
-    expect(result.output).toBe('error line')
+    expect(result.output).toBe('oops')
   })
 
-  it('Combines stdout and stderr', async () => {
-    simulateExec(0, 'out\n', 'err\n')
-
-    const result = await executeCommand('cmd', 'bash', null, '')
+  it('Captures stdout before stderr', async () => {
+    const result = await executeCommand(
+      'echo out; echo err >&2',
+      'bash',
+      null,
+      ''
+    )
 
     expect(result.output).toBe('out\nerr')
   })
 
   it('Trims trailing whitespace from output', async () => {
-    simulateExec(0, 'hello\n\n\n')
-
-    const result = await executeCommand('cmd', 'bash', null, '')
+    const result = await executeCommand(
+      "printf 'hello\\n\\n\\n'",
+      'bash',
+      null,
+      ''
+    )
 
     expect(result.output).toBe('hello')
   })
 
-  it('Returns empty output when command produces none', async () => {
-    simulateExec(0)
-
+  it('Returns empty output when the command produces none', async () => {
     const result = await executeCommand('true', 'bash', null, '')
 
+    expect(result.exitCode).toBe(0)
     expect(result.output).toBe('')
   })
 
-  it('Completes before timeout', async () => {
-    jest.useFakeTimers()
-    simulateExec(0, 'fast\n')
-
-    const promise = executeCommand('echo fast', 'bash', 5, '')
-    await jest.advanceTimersByTimeAsync(0)
-    const result = await promise
-
-    jest.useRealTimers()
-
-    expect(result.exitCode).toBe(0)
-    expect(result.output).toBe('fast')
-  })
-
-  it('Returns exit code 124 when command times out', async () => {
-    jest.useFakeTimers()
-
-    execFixture.exec.mockImplementationOnce(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 60000))
-      return 0
-    })
-
-    const promise = executeCommand('sleep 60', 'bash', 1, '')
-    await jest.advanceTimersByTimeAsync(1000)
-    const result = await promise
-
-    jest.useRealTimers()
-
-    expect(result.exitCode).toBe(124)
-  })
-
-  it('Captures partial output on timeout', async () => {
-    jest.useFakeTimers()
-
-    execFixture.exec.mockImplementationOnce(
-      async (
-        _cmd: string,
-        _args?: string[],
-        options?: {
-          listeners?: {
-            stdout?: (data: Buffer) => void
-          }
-        }
-      ) => {
-        if (options?.listeners?.stdout) {
-          options.listeners.stdout(Buffer.from('partial\n'))
-        }
-        await new Promise((resolve) => setTimeout(resolve, 60000))
-        return 0
-      }
+  it('Handles multiline output', async () => {
+    const result = await executeCommand(
+      "printf 'line1\\nline2\\nline3\\n'",
+      'bash',
+      null,
+      ''
     )
-
-    const promise = executeCommand('cmd', 'bash', 1, '')
-    await jest.advanceTimersByTimeAsync(1000)
-    const result = await promise
-
-    jest.useRealTimers()
-
-    expect(result.exitCode).toBe(124)
-    expect(result.output).toBe('partial')
-  })
-
-  it('Handles exec rejection without timeout', async () => {
-    execFixture.exec.mockRejectedValueOnce(new Error('exec failed'))
-
-    await expect(executeCommand('bad-cmd', 'bash', null, '')).rejects.toThrow(
-      'exec failed'
-    )
-  })
-
-  it('Handles exec rejection with timeout', async () => {
-    jest.useFakeTimers()
-
-    execFixture.exec.mockRejectedValueOnce(new Error('exec failed'))
-
-    const promise = executeCommand('bad-cmd', 'bash', 5, '')
-    await jest.advanceTimersByTimeAsync(0)
-    const result = await promise
-
-    jest.useRealTimers()
-
-    expect(result.exitCode).toBe(1)
-  })
-
-  it('Handles multiline command output', async () => {
-    simulateExec(0, 'line1\nline2\nline3\n')
-
-    const result = await executeCommand('cmd', 'bash', null, '')
 
     expect(result.output).toBe('line1\nline2\nline3')
   })
 
   it('Handles output with special characters', async () => {
-    simulateExec(0, '{"key": "value"}\n')
-
-    const result = await executeCommand('cmd', 'bash', null, '')
+    const result = await executeCommand(
+      'echo \'{"key": "value"}\'',
+      'bash',
+      null,
+      ''
+    )
 
     expect(result.output).toBe('{"key": "value"}')
   })
 
-  it('Handles chunked stdout delivery', async () => {
-    execFixture.exec.mockImplementationOnce(
-      async (
-        _cmd: string,
-        _args?: string[],
-        options?: {
-          listeners?: {
-            stdout?: (data: Buffer) => void
-          }
-        }
-      ) => {
-        if (options?.listeners?.stdout) {
-          options.listeners.stdout(Buffer.from('chunk1'))
-          options.listeners.stdout(Buffer.from('chunk2'))
-          options.listeners.stdout(Buffer.from('chunk3\n'))
-        }
-        return 0
-      }
-    )
+  it('Runs in workingDirectory when one is given', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'retry-cwd-'))
 
-    const result = await executeCommand('cmd', 'bash', null, '')
+    const result = await executeCommand('pwd -P', 'bash', null, dir)
 
-    expect(result.output).toBe('chunk1chunk2chunk3')
+    const { realpathSync } = await import('node:fs')
+    expect(result.output).toBe(realpathSync(dir))
   })
 
-  it('Sets cwd in exec options when workingDirectory is provided', async () => {
-    simulateExec(0, 'output\n')
+  it('Runs in the current directory when workingDirectory is empty', async () => {
+    const result = await executeCommand('pwd -P', 'bash', null, '')
 
-    await executeCommand('pwd', 'bash', null, '/tmp')
-
-    expect(execFixture.exec).toHaveBeenCalledWith(
-      'bash',
-      ['-c', 'pwd'],
-      expect.objectContaining({ cwd: '/tmp' })
-    )
+    const { realpathSync } = await import('node:fs')
+    expect(result.output).toBe(realpathSync(process.cwd()))
   })
 
-  it('Does not set cwd in exec options when workingDirectory is empty', async () => {
-    simulateExec(0, 'output\n')
+  it('Rejects when the shell cannot be spawned', async () => {
+    await expect(
+      executeCommand('echo hi', 'no-such-shell-xyz', null, '')
+    ).rejects.toThrow()
+  })
 
-    await executeCommand('pwd', 'bash', null, '')
+  describe('timeout', () => {
+    it('Completes normally when the command finishes in time', async () => {
+      const result = await executeCommand('echo fast', 'bash', 5, '')
 
-    expect(execFixture.exec).toHaveBeenCalledWith(
-      'bash',
-      ['-c', 'pwd'],
-      expect.not.objectContaining({ cwd: expect.anything() })
-    )
+      expect(result.exitCode).toBe(0)
+      expect(result.output).toBe('fast')
+    })
+
+    it('Returns exit code 124 when the command times out', async () => {
+      const result = await executeCommand('sleep 5', 'bash', 1, '')
+
+      expect(result.exitCode).toBe(124)
+    })
+
+    it('Captures partial output on timeout', async () => {
+      const result = await executeCommand(
+        'echo partial; sleep 5',
+        'bash',
+        1,
+        ''
+      )
+
+      expect(result.exitCode).toBe(124)
+      expect(result.output).toBe('partial')
+    })
+
+    it('Kills processes the command spawned', async () => {
+      const marker = join(mkdtempSync(join(tmpdir(), 'retry-kill-')), 'marker')
+
+      const result = await executeCommand(
+        `(sleep 2; touch ${marker}) & sleep 10`,
+        'bash',
+        1,
+        ''
+      )
+      expect(result.exitCode).toBe(124)
+
+      // Outlive the moment the orphan would have created the marker.
+      await sleep(2500)
+      expect(existsSync(marker)).toBe(false)
+    }, 15000)
   })
 })

@@ -1,4 +1,5 @@
-import * as exec from '@actions/exec'
+import { spawn } from 'node:child_process'
+import { info } from './core.js'
 
 export interface RetryResult {
   exitCode: number
@@ -26,62 +27,66 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export async function executeCommand(
+// Windows has no process groups to signal, so the child is only detached
+// where killing the whole tree actually works.
+const useProcessGroup = process.platform !== 'win32'
+
+export function executeCommand(
   command: string,
   shell: string,
   timeout: number | null,
   workingDirectory: string
 ): Promise<RetryResult> {
-  let stdout = ''
-  let stderr = ''
+  return new Promise((resolve, reject) => {
+    info(`[command]${shell} -c ${command}`)
 
-  const options: exec.ExecOptions = {
-    ignoreReturnCode: true,
-    ...(workingDirectory && { cwd: workingDirectory }),
-    listeners: {
-      stdout: (data: Buffer) => {
-        stdout += data.toString()
-      },
-      stderr: (data: Buffer) => {
-        stderr += data.toString()
-      }
-    }
-  }
-
-  let exitCode: number
-
-  if (timeout !== null) {
-    const timeoutMs = timeout * 1000
-    let timedOut = false
-
-    let timerId: ReturnType<typeof setTimeout> | undefined
-    const timeoutPromise = new Promise<number>((resolve) => {
-      timerId = setTimeout(() => {
-        timedOut = true
-        resolve(124)
-      }, timeoutMs)
+    const child = spawn(shell, ['-c', command], {
+      ...(workingDirectory && { cwd: workingDirectory }),
+      detached: useProcessGroup,
+      stdio: ['ignore', 'pipe', 'pipe']
     })
 
-    // Known limitation: @actions/exec does not expose the child process
-    // handle, so we cannot kill the spawned process on timeout. The timeout
-    // only races the promise; the child process may continue running in the
-    // background until the runner terminates it.
-    const execPromise = exec
-      .exec(shell, ['-c', command], options)
-      // Error details are intentionally discarded here because the timeout
-      // path only uses the exit code. Logging would require importing
-      // @actions/core solely for this edge case.
-      .catch(() => 1)
+    let stdout = ''
+    let stderr = ''
+    let timedOut = false
+    let timer: ReturnType<typeof setTimeout> | undefined
 
-    exitCode = await Promise.race([execPromise, timeoutPromise])
-    clearTimeout(timerId)
+    child.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString()
+      process.stdout.write(data)
+    })
 
-    if (timedOut) {
-      return { exitCode: 124, output: (stdout + stderr).trimEnd() }
+    child.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString()
+      process.stderr.write(data)
+    })
+
+    if (timeout !== null) {
+      timer = setTimeout(() => {
+        timedOut = true
+        const pid = child.pid
+        if (pid === undefined) return
+        try {
+          // Negating the pid signals the whole group, so children the command
+          // spawned are torn down with it.
+          process.kill(useProcessGroup ? -pid : pid, 'SIGKILL')
+        } catch {
+          // The process is already gone; nothing left to kill.
+        }
+      }, timeout * 1000)
     }
-  } else {
-    exitCode = await exec.exec(shell, ['-c', command], options)
-  }
 
-  return { exitCode, output: (stdout + stderr).trimEnd() }
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      resolve({
+        exitCode: timedOut ? 124 : (code ?? 1),
+        output: (stdout + stderr).trimEnd()
+      })
+    })
+  })
 }
