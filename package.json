@@ -1,7 +1,6 @@
 {
   "name": "actions-retry-command",
   "description": "Retries a shell command on failure with real-time output streaming",
-  "version": "2.0.0",
   "author": "corrupt952",
   "type": "module",
   "private": true,
