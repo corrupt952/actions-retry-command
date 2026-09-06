@@ -80,7 +80,7 @@ jobs:
 
       - name: Test basic command
         id: test-basic
-        uses: ./
+        uses: $/
         with:
           command: echo "hello"
 
@@ -95,7 +95,7 @@ jobs:
       - name: Test failure with retry
         id: test-failure
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           command: exit 1
           max_attempts: 2
@@ -111,7 +111,7 @@ jobs:
 
       - name: Test multiline output
         id: test-multiline
-        uses: ./
+        uses: $/
         with:
           command: printf 'hello\nworld\ngithub'
 
@@ -125,7 +125,7 @@ jobs:
       - name: Test specific exit code
         id: test-exit-code
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           command: exit 255
           max_attempts: 1
@@ -138,7 +138,7 @@ jobs:
 
       - name: Test retry then succeed
         id: test-retry-succeed
-        uses: ./
+        uses: $/
         with:
           command: |
             if [ -f /tmp/retry_marker_test ]; then echo "success"; exit 0; fi
@@ -154,7 +154,7 @@ jobs:
 
       - name: Test shell selection
         id: test-shell
-        uses: ./
+        uses: $/
         with:
           command: echo "from sh"
           shell: sh
@@ -168,7 +168,7 @@ jobs:
       - name: Test timeout
         id: test-timeout
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           command: sleep 60
           timeout: 1
@@ -185,7 +185,7 @@ jobs:
       - name: Test retry_on_exit_code
         id: test-retry-on-code
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           command: exit 42
           retry_on_exit_code: '1,2'
@@ -200,7 +200,7 @@ jobs:
 
       - name: Test working directory
         id: test-working-dir
-        uses: ./
+        uses: $/
         with:
           command: pwd -P
           working_directory: /tmp
