@@ -6,7 +6,7 @@ import * as core from '../__fixtures__/core.js'
 import * as execFixture from '../__fixtures__/exec.js'
 import { createSimulateExec } from '../__fixtures__/helpers.js'
 
-jest.unstable_mockModule('@actions/core', () => core)
+jest.unstable_mockModule('../src/core.js', () => core)
 jest.unstable_mockModule('@actions/exec', () => execFixture)
 
 const { run } = await import('../src/main.js')
