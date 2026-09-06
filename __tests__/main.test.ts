@@ -1,532 +1,488 @@
 /**
  * Unit tests for the action's main functionality, src/main.ts
+ *
+ * Nothing is stubbed: inputs are set as the runner sets them, commands are
+ * executed for real, and outputs are read back out of a GITHUB_OUTPUT file.
  */
-import { jest } from '@jest/globals'
-import * as core from '../__fixtures__/core.js'
-import * as execFixture from '../__fixtures__/exec.js'
-import { createSimulateExec } from '../__fixtures__/helpers.js'
+import assert from 'node:assert/strict'
+import { existsSync, realpathSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, describe, it } from 'node:test'
+import { run } from '../src/main.ts'
+import {
+  captureOutput,
+  clearInputs,
+  outputFile,
+  readOutputs,
+  scripted,
+  setInputs,
+  workspace
+} from './helpers.ts'
 
-jest.unstable_mockModule('@actions/core', () => core)
-jest.unstable_mockModule('@actions/exec', () => execFixture)
+interface Outcome {
+  outputs: Record<string, string>
+  log: string
+  failed: boolean
+}
 
-const { run } = await import('../src/main.js')
-
-function setupInputs(overrides: Record<string, string> = {}): void {
-  const defaults: Record<string, string> = {
+async function runAction(
+  inputs: Record<string, string> = {}
+): Promise<Outcome> {
+  const output = outputFile()
+  process.env.GITHUB_OUTPUT = output
+  setInputs({
     command: 'echo hello',
     max_attempts: '3',
     retry_interval: '0',
     timeout: '',
     shell: 'bash',
     retry_on_exit_code: '',
-    working_directory: ''
-  }
-  const inputs = { ...defaults, ...overrides }
-  core.getInput.mockImplementation((name: string) => inputs[name] ?? '')
-}
-
-const simulateExec = createSimulateExec(execFixture.exec)
-
-describe('main.ts', () => {
-  afterEach(() => {
-    jest.resetAllMocks()
+    working_directory: '',
+    ...inputs
   })
 
+  const log = await captureOutput(async () => {
+    await run()
+  })
+
+  return { outputs: readOutputs(output), log, failed: process.exitCode === 1 }
+}
+
+function occurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1
+}
+
+/** A command that leaves a trace, so a test can assert it never ran. */
+function neverRuns(): { command: string; ran: () => boolean } {
+  const marker = join(workspace(), 'ran')
+  return { command: `touch ${marker}`, ran: () => existsSync(marker) }
+}
+
+afterEach(() => {
+  clearInputs()
+  delete process.env.GITHUB_OUTPUT
+  process.exitCode = 0
+})
+
+describe('run', () => {
   describe('successful execution', () => {
     it('Succeeds on first attempt', async () => {
-      setupInputs({ command: 'echo hello' })
-      simulateExec(0, 'hello\n')
+      const job = scripted(0)
 
-      await run()
+      const { outputs, failed } = await runAction({ command: job.command })
 
-      expect(execFixture.exec).toHaveBeenCalledTimes(1)
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '0')
-      expect(core.setOutput).toHaveBeenCalledWith('result', 'hello')
-      expect(core.setFailed).not.toHaveBeenCalled()
+      assert.equal(job.attempts(), 1)
+      assert.deepEqual(outputs, { exit_code: '0', result: 'ok1' })
+      assert.equal(failed, false)
     })
 
     it('Retries and succeeds on second attempt', async () => {
-      setupInputs({ command: 'test-cmd', max_attempts: '3' })
-      simulateExec(1, 'fail\n')
-      simulateExec(0, 'success\n')
+      const job = scripted(1)
 
-      await run()
+      const { outputs, failed } = await runAction({
+        command: job.command,
+        max_attempts: '3'
+      })
 
-      expect(execFixture.exec).toHaveBeenCalledTimes(2)
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '0')
-      expect(core.setOutput).toHaveBeenCalledWith('result', 'success')
-      expect(core.setFailed).not.toHaveBeenCalled()
+      assert.equal(job.attempts(), 2)
+      assert.deepEqual(outputs, { exit_code: '0', result: 'ok2' })
+      assert.equal(failed, false)
     })
 
-    it('Retries and succeeds on last attempt', async () => {
-      setupInputs({ command: 'cmd', max_attempts: '3' })
-      simulateExec(1, 'fail1\n')
-      simulateExec(1, 'fail2\n')
-      simulateExec(0, 'finally\n')
+    it('Retries and succeeds on the last attempt', async () => {
+      const job = scripted(2)
 
-      await run()
+      const { outputs, failed } = await runAction({
+        command: job.command,
+        max_attempts: '3'
+      })
 
-      expect(execFixture.exec).toHaveBeenCalledTimes(3)
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '0')
-      expect(core.setOutput).toHaveBeenCalledWith('result', 'finally')
-      expect(core.setFailed).not.toHaveBeenCalled()
+      assert.equal(job.attempts(), 3)
+      assert.deepEqual(outputs, { exit_code: '0', result: 'ok3' })
+      assert.equal(failed, false)
     })
   })
 
   describe('failure handling', () => {
     it('Fails after exhausting all attempts', async () => {
-      setupInputs({ command: 'fail-cmd', max_attempts: '3' })
-      simulateExec(1, 'fail1\n')
-      simulateExec(1, 'fail2\n')
-      simulateExec(1, 'fail3\n')
+      const job = scripted(5)
 
-      await run()
+      const { outputs, log } = await runAction({
+        command: job.command,
+        max_attempts: '3'
+      })
 
-      expect(execFixture.exec).toHaveBeenCalledTimes(3)
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '1')
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'Command failed with exit code 1'
-      )
+      assert.equal(job.attempts(), 3)
+      assert.equal(outputs.exit_code, '1')
+      assert.ok(log.includes('::error::Command failed with exit code 1'))
     })
 
-    it('Preserves specific exit code', async () => {
-      setupInputs({ command: 'exit 42', max_attempts: '1' })
-      simulateExec(42)
+    it('Preserves a specific exit code', async () => {
+      const { outputs, log } = await runAction({
+        command: 'exit 42',
+        max_attempts: '1'
+      })
 
-      await run()
-
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '42')
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'Command failed with exit code 42'
-      )
+      assert.equal(outputs.exit_code, '42')
+      assert.ok(log.includes('::error::Command failed with exit code 42'))
     })
 
     it('Preserves exit code 255', async () => {
-      setupInputs({ command: 'exit 255', max_attempts: '1' })
-      simulateExec(255)
+      const { outputs } = await runAction({
+        command: 'exit 255',
+        max_attempts: '1'
+      })
 
-      await run()
-
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '255')
+      assert.equal(outputs.exit_code, '255')
     })
 
-    it('Fails with single attempt', async () => {
-      setupInputs({ command: 'fail', max_attempts: '1' })
-      simulateExec(1, 'error\n')
+    it('Runs once when max_attempts is 1', async () => {
+      const job = scripted(5)
 
-      await run()
+      const { failed } = await runAction({
+        command: job.command,
+        max_attempts: '1'
+      })
 
-      expect(execFixture.exec).toHaveBeenCalledTimes(1)
-      expect(core.setFailed).toHaveBeenCalled()
+      assert.equal(job.attempts(), 1)
+      assert.equal(failed, true)
     })
   })
 
   describe('output handling', () => {
     it('Captures multiline output', async () => {
-      setupInputs({ command: 'multi' })
-      simulateExec(0, 'line1\nline2\nline3\n')
+      const { outputs } = await runAction({
+        command: "printf 'line1\\nline2\\nline3\\n'"
+      })
 
-      await run()
-
-      expect(core.setOutput).toHaveBeenCalledWith(
-        'result',
-        'line1\nline2\nline3'
-      )
+      assert.equal(outputs.result, 'line1\nline2\nline3')
     })
 
     it('Captures both stdout and stderr', async () => {
-      setupInputs({ command: 'mixed' })
-      simulateExec(0, 'out\n', 'err\n')
+      const { outputs } = await runAction({
+        command: 'echo out; echo err >&2'
+      })
 
-      await run()
-
-      expect(core.setOutput).toHaveBeenCalledWith('result', 'out\nerr')
+      assert.equal(outputs.result, 'out\nerr')
     })
 
     it('Handles empty output', async () => {
-      setupInputs({ command: 'true' })
-      simulateExec(0)
+      const { outputs } = await runAction({ command: 'true' })
 
-      await run()
-
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '0')
-      expect(core.setOutput).toHaveBeenCalledWith('result', '')
+      assert.deepEqual(outputs, { exit_code: '0', result: '' })
     })
 
-    it('Only outputs the last attempt result', async () => {
-      setupInputs({ command: 'cmd', max_attempts: '3' })
-      simulateExec(1, 'first\n')
-      simulateExec(0, 'second\n')
+    it('Only reports the last attempt result', async () => {
+      const job = scripted(1)
 
-      await run()
+      const { outputs } = await runAction({
+        command: job.command,
+        max_attempts: '3'
+      })
 
-      expect(core.setOutput).toHaveBeenCalledWith('result', 'second')
+      assert.equal(outputs.result, 'ok2')
     })
 
-    it('Outputs last attempt result on failure', async () => {
-      setupInputs({ command: 'cmd', max_attempts: '2' })
-      simulateExec(1, 'attempt1\n')
-      simulateExec(1, 'attempt2\n')
+    it('Reports the last attempt result on failure', async () => {
+      const job = scripted(5)
 
-      await run()
+      const { outputs } = await runAction({
+        command: job.command,
+        max_attempts: '2'
+      })
 
-      expect(core.setOutput).toHaveBeenCalledWith('result', 'attempt2')
+      assert.equal(outputs.result, 'fail2')
     })
   })
 
   describe('retry_on_exit_code', () => {
-    it('Does not retry when exit code is not in retry list', async () => {
-      setupInputs({
-        command: 'fail',
+    it('Does not retry when the exit code is not in the retry list', async () => {
+      const job = scripted(5, 1)
+
+      const { outputs, log } = await runAction({
+        command: job.command,
         max_attempts: '3',
         retry_on_exit_code: '2,3'
       })
-      simulateExec(1, 'not retryable\n')
 
-      await run()
-
-      expect(execFixture.exec).toHaveBeenCalledTimes(1)
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '1')
-      expect(core.info).toHaveBeenCalledWith(
-        'Exit code 1 is not in retry list, stopping retries'
+      assert.equal(job.attempts(), 1)
+      assert.equal(outputs.exit_code, '1')
+      assert.ok(
+        log.includes('Exit code 1 is not in retry list, stopping retries')
       )
     })
 
-    it('Retries when exit code matches retry list', async () => {
-      setupInputs({
-        command: 'fail',
+    it('Retries when the exit code matches the retry list', async () => {
+      const job = scripted(1, 2)
+
+      const { outputs } = await runAction({
+        command: job.command,
         max_attempts: '3',
         retry_on_exit_code: '2,3'
       })
-      simulateExec(2, 'retryable\n')
-      simulateExec(0, 'ok\n')
 
-      await run()
-
-      expect(execFixture.exec).toHaveBeenCalledTimes(2)
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '0')
+      assert.equal(job.attempts(), 2)
+      assert.equal(outputs.exit_code, '0')
     })
 
-    it('Does not retry when all exit codes are invalid', async () => {
-      setupInputs({
-        command: 'fail',
+    it('Does not retry when every exit code in the list is invalid', async () => {
+      const job = scripted(5)
+
+      const { log } = await runAction({
+        command: job.command,
         max_attempts: '3',
         retry_on_exit_code: 'abc,def'
       })
-      simulateExec(1, 'fail\n')
-      await run()
-      expect(execFixture.exec).toHaveBeenCalledTimes(1)
-      expect(core.info).toHaveBeenCalledWith(
-        'Exit code 1 is not in retry list, stopping retries'
+
+      assert.equal(job.attempts(), 1)
+      assert.ok(
+        log.includes('Exit code 1 is not in retry list, stopping retries')
       )
     })
 
-    it('Exhausts retries when exit code always matches', async () => {
-      setupInputs({
-        command: 'fail',
+    it('Exhausts retries when the exit code always matches', async () => {
+      const job = scripted(5, 3)
+
+      const { outputs } = await runAction({
+        command: job.command,
         max_attempts: '2',
         retry_on_exit_code: '3'
       })
-      simulateExec(3, 'try1\n')
-      simulateExec(3, 'try2\n')
 
-      await run()
-
-      expect(execFixture.exec).toHaveBeenCalledTimes(2)
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '3')
+      assert.equal(job.attempts(), 2)
+      assert.equal(outputs.exit_code, '3')
     })
   })
 
   describe('shell selection', () => {
+    // $0 is the shell as it was invoked, so this reports the binary that
+    // actually ran rather than whatever it is aliased to.
+    const reportShell = 'echo "$0"'
+
     it('Uses bash by default', async () => {
-      setupInputs({ command: 'echo test', shell: '' })
-      simulateExec(0, 'test\n')
+      const { outputs } = await runAction({ command: reportShell, shell: '' })
 
-      await run()
-
-      expect(execFixture.exec).toHaveBeenCalledWith(
-        'bash',
-        ['-c', 'echo test'],
-        expect.any(Object)
-      )
+      assert.equal(outputs.result, 'bash')
     })
 
     it('Uses the specified shell', async () => {
-      setupInputs({ command: 'echo test', shell: 'sh' })
-      simulateExec(0, 'test\n')
+      const { outputs } = await runAction({ command: reportShell, shell: 'sh' })
 
-      await run()
-
-      expect(execFixture.exec).toHaveBeenCalledWith(
-        'sh',
-        ['-c', 'echo test'],
-        expect.any(Object)
-      )
+      assert.equal(outputs.result, 'sh')
     })
   })
 
   describe('timeout', () => {
-    it('Passes timeout to executeCommand', async () => {
-      jest.useFakeTimers()
+    it('Completes normally when the command finishes in time', async () => {
+      const { outputs } = await runAction({
+        command: 'echo done',
+        timeout: '30'
+      })
 
-      setupInputs({ command: 'slow-cmd', timeout: '30' })
-      simulateExec(0, 'done\n')
-
-      const promise = run()
-      await jest.advanceTimersByTimeAsync(0)
-      await promise
-
-      jest.useRealTimers()
-
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '0')
+      assert.deepEqual(outputs, { exit_code: '0', result: 'done' })
     })
 
-    it('Handles timeout with no value as null', async () => {
-      setupInputs({ command: 'cmd', timeout: '' })
-      simulateExec(0, 'ok\n')
+    it('Reports exit code 124 when the command times out', async () => {
+      const { outputs, log } = await runAction({
+        command: 'sleep 5',
+        timeout: '1',
+        max_attempts: '1'
+      })
 
-      await run()
+      assert.equal(outputs.exit_code, '124')
+      assert.ok(log.includes('::error::Command failed with exit code 124'))
+    })
 
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '0')
+    it('Treats an empty timeout as no timeout', async () => {
+      const { outputs } = await runAction({ command: 'echo ok', timeout: '' })
+
+      assert.equal(outputs.exit_code, '0')
     })
   })
 
   describe('default values', () => {
-    it('Uses default max_attempts of 5', async () => {
-      setupInputs({ command: 'fail', max_attempts: '' })
-      for (let i = 0; i < 5; i++) {
-        simulateExec(1, `fail${i}\n`)
-      }
+    it('Uses a default max_attempts of 5', async () => {
+      const job = scripted(9)
 
-      await run()
+      await runAction({ command: job.command, max_attempts: '' })
 
-      expect(execFixture.exec).toHaveBeenCalledTimes(5)
+      assert.equal(job.attempts(), 5)
     })
 
-    it('Uses default shell of bash', async () => {
-      setupInputs({ command: 'cmd', shell: '' })
-      simulateExec(0)
+    it('Uses a default retry_interval of 5 seconds', async () => {
+      const job = scripted(1)
 
-      await run()
+      // The retry genuinely sleeps, so this test pays the five seconds.
+      const { log } = await runAction({
+        command: job.command,
+        max_attempts: '2',
+        retry_interval: ''
+      })
 
-      expect(execFixture.exec).toHaveBeenCalledWith(
-        'bash',
-        expect.any(Array),
-        expect.any(Object)
-      )
-    })
-
-    it('Uses default retry_interval of 5', async () => {
-      jest.useFakeTimers()
-
-      setupInputs({ command: 'fail', max_attempts: '2', retry_interval: '' })
-      simulateExec(1, 'fail\n')
-      simulateExec(0, 'ok\n')
-
-      const promise = run()
-      await jest.advanceTimersByTimeAsync(5000)
-      await promise
-
-      jest.useRealTimers()
-
-      expect(core.info).toHaveBeenCalledWith('Retrying in 5 seconds...')
+      assert.ok(log.includes('Retrying in 5 seconds...'))
     })
   })
 
   describe('group annotations', () => {
-    it('Uses group annotations for each attempt', async () => {
-      setupInputs({ command: 'cmd', max_attempts: '2' })
-      simulateExec(1)
-      simulateExec(0, 'ok\n')
+    it('Wraps every attempt in a group', async () => {
+      const job = scripted(1)
 
-      await run()
+      const { log } = await runAction({
+        command: job.command,
+        max_attempts: '2'
+      })
 
-      expect(core.startGroup).toHaveBeenCalledWith('Attempt 1 of 2')
-      expect(core.startGroup).toHaveBeenCalledWith('Attempt 2 of 2')
-      expect(core.endGroup).toHaveBeenCalledTimes(2)
+      assert.ok(log.includes('::group::Attempt 1 of 2'))
+      assert.ok(log.includes('::group::Attempt 2 of 2'))
+      assert.equal(occurrences(log, '::endgroup::'), 2)
     })
 
-    it('Shows correct attempt count on first success', async () => {
-      setupInputs({ command: 'cmd', max_attempts: '5' })
-      simulateExec(0, 'ok\n')
+    it('Opens a single group when the first attempt succeeds', async () => {
+      const { log } = await runAction({ command: 'true', max_attempts: '5' })
 
-      await run()
-
-      expect(core.startGroup).toHaveBeenCalledTimes(1)
-      expect(core.startGroup).toHaveBeenCalledWith('Attempt 1 of 5')
-      expect(core.endGroup).toHaveBeenCalledTimes(1)
+      assert.ok(log.includes('::group::Attempt 1 of 5'))
+      assert.equal(occurrences(log, '::group::'), 1)
+      assert.equal(occurrences(log, '::endgroup::'), 1)
     })
   })
 
   describe('retry interval', () => {
-    it('Logs retry interval message', async () => {
-      jest.useFakeTimers()
+    it('Logs the interval before sleeping', async () => {
+      const job = scripted(1)
 
-      setupInputs({
-        command: 'fail',
+      const { log } = await runAction({
+        command: job.command,
         max_attempts: '2',
-        retry_interval: '10'
+        retry_interval: '0'
       })
-      simulateExec(1, 'fail\n')
-      simulateExec(0, 'ok\n')
 
-      const promise = run()
-      await jest.advanceTimersByTimeAsync(10000)
-      await promise
-
-      jest.useRealTimers()
-
-      expect(core.info).toHaveBeenCalledWith('Retrying in 10 seconds...')
+      assert.ok(log.includes('Retrying in 0 seconds...'))
     })
 
-    it('Fails when retry_interval evaluates to negative', async () => {
-      setupInputs({
-        command: 'fail',
+    it('Evaluates an expression against the attempt number', async () => {
+      const job = scripted(1)
+
+      const { log } = await runAction({
+        command: job.command,
+        max_attempts: '2',
+        retry_interval: 'attempt - 1'
+      })
+
+      assert.ok(log.includes('Retrying in 0 seconds...'))
+    })
+
+    it('Fails when the interval evaluates to a negative number', async () => {
+      const job = scripted(5)
+
+      const { log } = await runAction({
+        command: job.command,
         max_attempts: '2',
         retry_interval: '-5'
       })
-      simulateExec(1, 'fail\n')
 
-      await run()
-
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'retry_interval evaluated to a negative number'
+      assert.ok(
+        log.includes('::error::retry_interval evaluated to a negative number')
       )
-    })
-
-    it('Supports expression-based retry_interval', async () => {
-      jest.useFakeTimers()
-
-      setupInputs({
-        command: 'fail',
-        max_attempts: '3',
-        retry_interval: 'attempt * 2'
-      })
-      simulateExec(1, 'fail\n')
-      simulateExec(0, 'ok\n')
-
-      const promise = run()
-      await jest.advanceTimersByTimeAsync(2000)
-      await promise
-
-      jest.useRealTimers()
-
-      expect(core.info).toHaveBeenCalledWith('Retrying in 2 seconds...')
     })
   })
 
   describe('input validation', () => {
-    it('Fails when max_attempts is not a number', async () => {
-      setupInputs({ command: 'cmd', max_attempts: 'abc' })
+    it('Fails when command is not supplied', async () => {
+      const { log } = await runAction({ command: '' })
 
-      await run()
-
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'max_attempts must be a positive integer'
+      assert.ok(
+        log.includes('::error::Input required and not supplied: command')
       )
-      expect(execFixture.exec).not.toHaveBeenCalled()
+    })
+
+    it('Fails when max_attempts is not a number', async () => {
+      const job = neverRuns()
+
+      const { log } = await runAction({
+        command: job.command,
+        max_attempts: 'abc'
+      })
+
+      assert.ok(
+        log.includes('::error::max_attempts must be a positive integer')
+      )
+      assert.equal(job.ran(), false)
     })
 
     it('Fails when max_attempts is zero', async () => {
-      setupInputs({ command: 'cmd', max_attempts: '0' })
+      const job = neverRuns()
 
-      await run()
+      const { log } = await runAction({
+        command: job.command,
+        max_attempts: '0'
+      })
 
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'max_attempts must be a positive integer'
+      assert.ok(
+        log.includes('::error::max_attempts must be a positive integer')
       )
-      expect(execFixture.exec).not.toHaveBeenCalled()
+      assert.equal(job.ran(), false)
     })
 
     it('Fails when max_attempts is negative', async () => {
-      setupInputs({ command: 'cmd', max_attempts: '-1' })
+      const job = neverRuns()
 
-      await run()
+      const { log } = await runAction({
+        command: job.command,
+        max_attempts: '-1'
+      })
 
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'max_attempts must be a positive integer'
+      assert.ok(
+        log.includes('::error::max_attempts must be a positive integer')
       )
-      expect(execFixture.exec).not.toHaveBeenCalled()
+      assert.equal(job.ran(), false)
     })
 
     it('Fails when timeout is not a number', async () => {
-      setupInputs({ command: 'cmd', timeout: 'abc' })
-      await run()
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'timeout must be a non-negative integer'
-      )
-      expect(execFixture.exec).not.toHaveBeenCalled()
+      const job = neverRuns()
+
+      const { log } = await runAction({ command: job.command, timeout: 'abc' })
+
+      assert.ok(log.includes('::error::timeout must be a non-negative integer'))
+      assert.equal(job.ran(), false)
     })
 
     it('Fails when timeout is negative', async () => {
-      setupInputs({ command: 'cmd', timeout: '-1' })
-      await run()
-      expect(core.setFailed).toHaveBeenCalledWith(
-        'timeout must be a non-negative integer'
-      )
-      expect(execFixture.exec).not.toHaveBeenCalled()
-    })
+      const job = neverRuns()
 
-    it('Allows timeout of zero', async () => {
-      jest.useFakeTimers()
-      setupInputs({ command: 'cmd', timeout: '0' })
-      simulateExec(0, 'ok\n')
-      const promise = run()
-      await jest.advanceTimersByTimeAsync(0)
-      await promise
-      jest.useRealTimers()
-      expect(core.setOutput).toHaveBeenCalledWith('exit_code', '0')
+      const { log } = await runAction({ command: job.command, timeout: '-1' })
+
+      assert.ok(log.includes('::error::timeout must be a non-negative integer'))
+      assert.equal(job.ran(), false)
     })
   })
 
   describe('error handling', () => {
-    it('Catches thrown Error and calls setFailed', async () => {
-      core.getInput.mockImplementation(() => {
-        throw new Error('input error')
+    it('Reports a shell that cannot be spawned', async () => {
+      const { failed } = await runAction({
+        command: 'echo hi',
+        shell: 'no-such-shell-xyz'
       })
 
-      await run()
-
-      expect(core.setFailed).toHaveBeenCalledWith('input error')
-    })
-
-    it('Handles non-Error throws by calling setFailed', async () => {
-      core.getInput.mockImplementation(() => {
-        throw 'string error'
-      })
-
-      await run()
-
-      expect(core.setFailed).toHaveBeenCalledWith('string error')
+      assert.equal(failed, true)
     })
   })
 
   describe('working_directory', () => {
-    it('Passes working_directory to executeCommand', async () => {
-      setupInputs({ command: 'pwd', working_directory: '/tmp' })
-      simulateExec(0, '/tmp\n')
+    it('Runs the command in the given directory', async () => {
+      const dir = workspace()
 
-      await run()
+      const { outputs } = await runAction({
+        command: 'pwd -P',
+        working_directory: dir
+      })
 
-      expect(execFixture.exec).toHaveBeenCalledWith(
-        'bash',
-        ['-c', 'pwd'],
-        expect.objectContaining({ cwd: '/tmp' })
-      )
-      expect(core.setOutput).toHaveBeenCalledWith('result', '/tmp')
+      assert.equal(outputs.result, realpathSync(dir))
     })
 
-    it('Uses empty working_directory by default', async () => {
-      setupInputs({ command: 'pwd' })
-      simulateExec(0, '/home\n')
+    it('Runs in the current directory by default', async () => {
+      const { outputs } = await runAction({ command: 'pwd -P' })
 
-      await run()
-
-      expect(execFixture.exec).toHaveBeenCalledWith(
-        'bash',
-        ['-c', 'pwd'],
-        expect.not.objectContaining({ cwd: expect.anything() })
-      )
+      assert.equal(outputs.result, realpathSync(process.cwd()))
     })
   })
 })

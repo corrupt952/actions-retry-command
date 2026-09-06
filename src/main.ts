@@ -1,11 +1,11 @@
-import * as core from '@actions/core'
-import { evaluateExpression } from './expression.js'
+import * as core from './core.ts'
+import { evaluateExpression } from './expression.ts'
 import {
   executeCommand,
   parseRetryOnExitCode,
   shouldRetry,
   sleep
-} from './retry.js'
+} from './retry.ts'
 
 /**
  * The main function for the action.
