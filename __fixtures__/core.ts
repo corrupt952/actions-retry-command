@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals'
-import type * as core from '../src/core.js'
+import type * as core from '../src/core.ts'
 
 export const info = jest.fn<typeof core.info>()
 export const getInput = jest.fn<typeof core.getInput>()

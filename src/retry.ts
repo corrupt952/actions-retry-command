@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { info } from './core.js'
+import { info } from './core.ts'
 
 export interface RetryResult {
   exitCode: number

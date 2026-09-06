@@ -12,7 +12,7 @@ import {
   setFailed,
   setOutput,
   startGroup
-} from '../src/core.js'
+} from '../src/core.ts'
 
 const originalEnv = process.env
 

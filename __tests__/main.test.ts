@@ -8,11 +8,11 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { jest } from '@jest/globals'
-import * as core from '../__fixtures__/core.js'
+import * as core from '../__fixtures__/core.ts'
 
-jest.unstable_mockModule('../src/core.js', () => core)
+jest.unstable_mockModule('../src/core.ts', () => core)
 
-const { run } = await import('../src/main.js')
+const { run } = await import('../src/main.ts')
 
 function workspace(): string {
   return mkdtempSync(join(tmpdir(), 'main-test-'))

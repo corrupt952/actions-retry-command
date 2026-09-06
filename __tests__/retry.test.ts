@@ -13,7 +13,7 @@ import {
   parseRetryOnExitCode,
   shouldRetry,
   sleep
-} from '../src/retry.js'
+} from '../src/retry.ts'
 
 describe('shouldRetry', () => {
   it('Returns false for exit code 0', () => {

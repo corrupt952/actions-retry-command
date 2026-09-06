@@ -1,7 +1,7 @@
 /**
  * Unit tests for src/expression.ts
  */
-import { evaluateExpression } from '../src/expression.js'
+import { evaluateExpression } from '../src/expression.ts'
 
 describe('evaluateExpression', () => {
   describe('basic arithmetic', () => {
